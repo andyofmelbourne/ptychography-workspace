@@ -13,8 +13,11 @@ import PyQt4.QtCore
 import signal
 import copy 
 
-sys.path.append(os.path.abspath('../utils/'))
-sys.path.append(os.path.abspath('../process/'))
+root = os.path.split(os.path.abspath(__file__))[0]
+root = os.path.split(root)[0]
+
+sys.path.append(os.path.join(root, 'utils'))
+sys.path.append(os.path.join(root, 'process'))
 
 #from widgets import Write_config_file_widget
 from basic_stitch  import parse_cmdline_args
@@ -37,7 +40,7 @@ def write_config_file_gui(config_dict, output_dir):
     app.exec_()
 
 
-def stitch(f, filename, config_dict):
+def stitch(filename, config_dict):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C
     app = PyQt4.QtGui.QApplication([])
     
@@ -45,7 +48,7 @@ def stitch(f, filename, config_dict):
     Mwin = PyQt4.QtGui.QMainWindow()
     Mwin.setWindowTitle('Stitches Bitches')
     
-    cw = Show_stitch_widget(f, filename, config_dict)
+    cw = Show_stitch_widget(filename, config_dict)
     
     # add the central widget to the main window
     Mwin.setCentralWidget(cw)
@@ -58,8 +61,7 @@ def stitch(f, filename, config_dict):
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
     
-    f = h5py.File(args.filename)
-    stitch(f, args.filename, params)
+    stitch(args.filename, params)
     
     # set the outputdirectory to the same as the input file
     #output_file = os.path.split(args.filename)[0]  

@@ -236,7 +236,8 @@ if __name__ == '__main__':
     good_frames = f['good_frames'][()]
 
     # get the original shift coordinates
-    R = f['metadata/R_meters'][list(good_frames)].astype(np.float)
+    R = f['metadata/R_meters'][()].astype(np.float)
+    print 'R shape:', R.shape
     
     # get the Magnification
     M = f['/metadata/detector_distance'].value / params['stitch']['defocus']
@@ -246,7 +247,7 @@ if __name__ == '__main__':
     R[:, 1] *= M / f['/metadata/fs_pixel_size'].value
     
     R = np.rint(R).astype(np.int)
-    O, P = OP_sup(f['data'][list(good_frames)].astype(np.float), R, f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
+    O, P = OP_sup(f['data'][list(good_frames)].astype(np.float), R[list(good_frames)], f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
     
     # write the result 
     ##################
@@ -265,6 +266,7 @@ if __name__ == '__main__':
     key = params['stitch']['h5_group']+'/R'
     if key in g :
         del g[key]
+    print 'R shape:', R.shape
     g[key] = R
     
     key = params['stitch']['h5_group']+'/whitefield'

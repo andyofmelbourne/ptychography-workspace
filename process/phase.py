@@ -4,6 +4,9 @@ Phase the input file using Ptychography
 should submit a batch job:
 ???
 """
+import h5py
+import time
+
 import Ptychography.ptychography.era as era
 from Ptychography import DM
 from Ptychography import ERA
@@ -44,7 +47,18 @@ def parse_cmdline_args():
     
     return args, params
 
-
+def config_iters_to_alg_num(string):
+    import re
+    # split a string like '100ERA 200DM 50ERA' with the numbers
+    steps = re.split('(\d+)', string)   # ['', '100', 'ERA ', '200', 'DM ', '50', 'ERA']
+    
+    # get rid of empty strings
+    steps = [s for s in steps if len(s)>0] # ['100', 'ERA ', '200', 'DM ', '50', 'ERA']
+    
+    # pair alg and iters
+    # [['ERA', 100], ['DM', 200], ['ERA', 50]]
+    alg_iters = [ [steps[i+1].strip(), int(steps[i])] for i in range(0, len(steps), 2)]
+    return alg_iters
 
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
@@ -53,38 +67,56 @@ if __name__ == '__main__':
     ###########################
     if rank == 0 :
         f = h5py.File(args.filename)
-         
-        if params['input']['frames'] != 'all' :
-            frames_i = np.array([int(i) for i in params['input']['frames'].split(',')])
-        else :
-            frames_i = np.arange(f['data'].shape[0])
         
-        I    = f['data'][frames_i]
-        R    = f['R'][frames_i]
+        # get the frames to process
+        good_frames = list(f['good_frames'][()])
+        
+        I    = f['data'][good_frames]
+        R    = f['R'][good_frames]
         mask = f['mask'][()]
-        if 'O' not in f :
-            O = None
-        else :
-            O    = f['O'][()]
+        O    = f['O'][()]
         P    = f['P'][()]
         
-        defocus = params['input']['defocus']
-        if (defocus is not None) and (defocus != 'metadata') :
+        # get the Fresnel number 
+        ########################
+        if params['input']['fresnel'] : 
+            defocus = params['input']['defocus']
             lamb = f['metadata/wavelength'][()]
             z    = f['metadata/detector_distance'][()]
             du   = f['metadata/fs_pixel_size'][()]
             dq   = du / (lamb * z)
             Fresnel = 1 / (dq**2 * lamb * defocus)
-            dx_fresnel = du * params['input']['defocus'] / z
         else :
             Fresnel = False
         
         print 'Fresnel number : ', Fresnel
-         
-        # scale Rs if Fresnel is not False
-        if Fresnel is not False :
-            R *= f['/metadata/R_meters'][()]
-            R = R / dx # this is the pixel unit shifts
-            R = np.rint(R).astype(np.int)
-    
+    else :
+        Fresnel = O = I = R = P = mask = None
+        
     comm.Barrier()
+    
+    alg_iters = config_iters_to_alg_num(params['ptychography']['iters'])
+    
+    d0 = time.time()
+
+    in_params = params['ptychography']
+    
+    eMod = []
+    for alg, iters in alg_iters:
+        if alg == 'ERA' :
+            Oout, Pout, info =  ERA(I, R, P, O, iters, OP_iters = in_params['op_iters'], \
+                          mask = mask, Fresnel = Fresnel, background = None, method = in_params['method'], Pmod_probe = in_params['pmod_probe'] , \
+                          probe_centering = in_params['probe_centering'], hardware = 'cpu', \
+                          alpha = in_params['alpha'], dtype = in_params['dtype'], full_output = True, verbose = False, \
+                          sample_blur = in_params['sample_blur'])
+
+            if rank == 0 : eMod += info['eMod']
+    
+    d1 = time.time()
+    
+    # Output
+    ############
+    if rank == 0 :
+        print '\ntime:', d1-d0
+        write_cxi(I, info['I'], P, Pout, O, Oout, \
+                  R, R, None, None, mask, eMod, fnam = params['output']['fnam'], compress = True)

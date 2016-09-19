@@ -175,18 +175,18 @@ if __name__ == '__main__':
     
     # crop and bin function
     crop_bin = lambda x : bin_down(crop(x), n=params['crop_and_bin']['bin'])
-
+    
     mask_crop_bin = crop_bin(mask)
     
     mask_norm = mask_crop_bin.copy()
     mask_norm[mask_norm==0] = 1
     mask_norm = mask_norm.astype(np.float)
-
-    mask_crop_bin = mask_crop_bin > 0
     
+    mask_crop_bin = mask_crop_bin > 0
+     
     # crop and bin function with mask normalisation function
     crop_bin_I = lambda x : crop_bin(x.astype(np.float) * mask) / mask_norm
-
+    
     # write the result 
     ##################
     if params['crop_and_bin']['output'] is None :
@@ -200,21 +200,30 @@ if __name__ == '__main__':
     overwrite_or_create(g, 'mask', mask_crop_bin)
 
     # Rs 
-    Rscale = get_new_Rscale(mask.shape, mask_crop_bin.shape, params['crop_and_bin']['bin'], params['crop_and_bin']['bin'])
-    R = f['R'].value 
-    R[:, 0] = R[:, 0] * Rscale[0]
-    R[:, 1] = R[:, 1] * Rscale[1]
-    overwrite_or_create(g, 'R', R)
+    #Rscale = get_new_Rscale(mask.shape, mask_crop_bin.shape, params['crop_and_bin']['bin'], params['crop_and_bin']['bin'])
+    #R = f['R'].value 
+    #R[:, 0] = R[:, 0] * Rscale[0]
+    #R[:, 1] = R[:, 1] * Rscale[1]
+    #overwrite_or_create(g, 'R', R)
 
     # whitefield
     overwrite_or_create(g, 'whitefield', crop_bin_I(f['whitefield'][()]))
 
-    # metadata
-    key = '/metadata/R_ss_scale'
-    overwrite_or_create(g, key, f[key][()] / Rscale[0])
+    key = 'good_frames'
+    overwrite_or_create(g, key, f[key][()])
 
-    key = '/metadata/R_fs_scale'
-    overwrite_or_create(g, key, f[key][()] / Rscale[1])
+    # metadata
+    key = '/metadata/R_meters'
+    overwrite_or_create(g, key, f[key][()])
+
+    key = '/metadata/defocus'
+    overwrite_or_create(g, key, f[key][()])
+
+    key = '/metadata/grid'
+    overwrite_or_create(g, key, f[key][()])
+
+    key = '/metadata/steps'
+    overwrite_or_create(g, key, f[key][()])
 
     key = '/metadata/detector_distance'
     overwrite_or_create(g, key, f[key][()])
@@ -228,12 +237,6 @@ if __name__ == '__main__':
     key = '/metadata/wavelength'
     overwrite_or_create(g, key, f[key][()])
 
-    key = '/metadata/grid'
-    overwrite_or_create(g, key, f[key][()])
-
-    key = '/metadata/steps'
-    overwrite_or_create(g, key, f[key][()])
-    
     # data
     if 'data' in g :
         del g['data'] 

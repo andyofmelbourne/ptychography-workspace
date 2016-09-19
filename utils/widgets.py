@@ -99,19 +99,25 @@ class Show_probe_widget(PyQt4.QtGui.QWidget):
         self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
+        # set sample and R
+        ##################
+        self.set_button = PyQt4.QtGui.QPushButton('set: P', self)
+        self.set_button.clicked.connect(self.set_button_clicked)
+        
         # add a spacer for the labels and such
         verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
-        layout.addWidget(self.p_amp_imageView,           0, 1, 1, 1)
-        layout.addWidget(self.P_int_imageView,           1, 1, 1, 1)
-        layout.addWidget(self.P_phase_imageView,         2, 1, 1, 1)
+        layout.addWidget(self.p_amp_imageView,           0, 1, 2, 1)
+        layout.addWidget(self.P_int_imageView,           2, 1, 1, 1)
+        layout.addWidget(self.P_phase_imageView,         3, 1, 1, 1)
         
         layout.addWidget(self.config_widget,       0, 0, 1, 1)
         layout.addWidget(self.run_button,          1, 0, 1, 1)
-        layout.addItem(verticalSpacer,             2, 0, 1, 1)
-        layout.addWidget(self.run_command_widget,  3, 0, 1, 2)
+        layout.addWidget(self.set_button,          2, 0, 1, 1)
+        layout.addItem(verticalSpacer,             3, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  4, 0, 1, 2)
         layout.setColumnStretch(1, 1)
         layout.setColumnMinimumWidth(0, 250)
         self.layout = layout
@@ -153,6 +159,15 @@ class Show_probe_widget(PyQt4.QtGui.QWidget):
         cmd = 'python ' + py + ' ' + self.filename + ' -c ' + self.config_filename
         self.run_command_widget.run_cmd(cmd)
     
+    def set_button_clicked(self):
+        f = h5py.File(self.filename)
+        P = f[self.path+'/P'][()]
+        print('writing P to file')
+        if 'P' in f :
+            del f['P']
+        f['P'] = P
+        print('Done')
+        f.close()
 
 class Write_config_file_widget(PyQt4.QtGui.QWidget):
     def __init__(self, config_dict, output_filename):

@@ -733,7 +733,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.unmask_checkbox   = PyQt4.QtGui.QCheckBox('unmask')
         self.toggle_checkbox.setChecked(True)   
         
-        self.toggle_group           = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
+        self.toggle_group      = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
         self.toggle_group.addButton(self.toggle_checkbox)   
         self.toggle_group.addButton(self.mask_checkbox)   
         self.toggle_group.addButton(self.unmask_checkbox)   

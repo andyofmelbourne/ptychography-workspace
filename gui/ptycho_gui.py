@@ -68,10 +68,25 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.tabs.append( Show_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "show stitch")
         
-        # mask Maker
-        ############
+        # mask Maker tab
+        ################
         self.tabs.append( Mask_maker_widget(filename, 'mask', filename, 'mask') )
         self.addTab(self.tabs[-1], "mask maker")
+        
+        # probe maker tab
+        #################
+        # show real-space / detector-space probe
+        # change defocus
+        
+        # sample maker tab
+        ##################
+        # back-propagation
+        # stitch
+        # random
+        # sample-pos overlay
+        
+        # phase tab
+        ##################
 
 def gui(filename):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C

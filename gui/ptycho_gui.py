@@ -27,12 +27,14 @@ from widgets import Show_frames_widget
 from widgets import Select_frames_widget
 from widgets import Show_frames_selection_widget
 from widgets import Mask_maker_widget
+from widgets import Show_probe_widget
 
-def load_stitch_config(filename):
+def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
-    config = os.path.join(os.path.split(filename)[0], 'basic_stitch.ini')
+    config = os.path.join(os.path.split(filename)[0], name)
     if not os.path.exists(config):
-        config = '../process/basic_stitch.ini'
+        config = os.path.join(root, 'process')
+        config = os.path.join(config, name)
     
     # check that args.config exists
     if not os.path.exists(config):
@@ -64,7 +66,7 @@ class Gui(PyQt4.QtGui.QTabWidget):
         # Show stitch tab
         #################
         # load the default config file
-        params = load_stitch_config(filename)
+        params = load_config(filename, name='basic_stitch.ini')
         self.tabs.append( Show_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "show stitch")
         
@@ -77,7 +79,10 @@ class Gui(PyQt4.QtGui.QTabWidget):
         #################
         # show real-space / detector-space probe
         # change defocus
-        
+        params = load_config(filename, name='make_probe.ini')
+        self.tabs.append( Show_probe_widget(filename, params) )
+        self.addTab(self.tabs[-1], "show probe")
+
         # sample maker tab
         ##################
         # back-propagation

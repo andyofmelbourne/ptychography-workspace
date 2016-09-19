@@ -83,8 +83,7 @@ if __name__ == '__main__':
          
         # scale Rs if Fresnel is not False
         if Fresnel is not False :
-            R[:, 0] *= f['/metadata/R_ss_scale'].value
-            R[:, 1] *= f['/metadata/R_fs_scale'].value
+            R *= f['/metadata/R_meters'][()]
             R = R / dx # this is the pixel unit shifts
             R = np.rint(R).astype(np.int)
     

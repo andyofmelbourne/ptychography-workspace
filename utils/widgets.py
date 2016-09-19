@@ -18,6 +18,142 @@ import copy
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
 
+class Show_probe_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, filename, config_dict):
+        super(Show_probe_widget, self).__init__()
+        
+        self.initUI(filename, config_dict)
+
+    def initUI(self, filename, config_dict):
+        """
+        First show the stitch if there is one...
+        
+        We need: 
+        an imageview on the left
+        a config writer on the right
+        below that a run button 
+        below that a run and log command widget
+        
+        then wait for command to finish and show the image
+        
+        would be cool if we could show a scatter plot of the 
+        positions on top of the stitch image.
+        """
+        
+        # get the output directory
+        self.output_dir = os.path.split(filename)[0]
+        self.config_filename = os.path.join(self.output_dir, 'make_probe.ini')
+        self.filename = filename
+        self.f = h5py.File(filename, 'r')
+        
+        # Make a grid layout
+        layout = PyQt4.QtGui.QGridLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+        
+        # config widget
+        ###############
+        self.config_widget = Write_config_file_widget(config_dict, self.config_filename)
+
+        # sample plane amplitude plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'sample plane amplitude') 
+        self.p_amp_imageView = pg.ImageView(view = frame_plt)
+        self.p_amp_imageView.ui.menuBtn.hide()
+        self.p_amp_imageView.ui.roiBtn.hide()
+
+        # sample plane phase plot
+        #############################
+        #frame_plt = pg.PlotItem(title = '')
+        #self.p_phase_imageView = pg.ImageView(view = frame_plt)
+        #self.p_phase_imageView.ui.menuBtn.hide()
+        #self.p_phase_imageView.ui.roiBtn.hide()
+
+        # detector plane intensity plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'detector plane intensity')
+        self.P_int_imageView = pg.ImageView(view = frame_plt)
+        self.P_int_imageView.ui.menuBtn.hide()
+        self.P_int_imageView.ui.roiBtn.hide()
+        
+        # detector plane phase plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'detector plane phase')
+        self.P_phase_imageView = pg.ImageView(view = frame_plt)
+        self.P_phase_imageView.ui.menuBtn.hide()
+        self.P_phase_imageView.ui.roiBtn.hide()
+
+        self.f.close()
+        
+        self.im_init = False
+        self.show_probe()
+
+        # run command widget
+        ####################
+        self.run_command_widget = Run_and_log_command()
+        self.run_command_widget.finished_signal.connect(self.show_probe)
+
+        # run command button
+        ####################
+        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button.clicked.connect(self.run_button_clicked)
+        
+        # add a spacer for the labels and such
+        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        
+        # set the layout
+        ################
+        layout.addWidget(self.p_amp_imageView,           0, 1, 1, 1)
+        layout.addWidget(self.P_int_imageView,           1, 1, 1, 1)
+        layout.addWidget(self.P_phase_imageView,         2, 1, 1, 1)
+        
+        layout.addWidget(self.config_widget,       0, 0, 1, 1)
+        layout.addWidget(self.run_button,          1, 0, 1, 1)
+        layout.addItem(verticalSpacer,             2, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  3, 0, 1, 2)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnMinimumWidth(0, 250)
+        self.layout = layout
+
+    def show_probe(self):
+        self.f = h5py.File(self.filename, 'r')
+        
+        self.path = self.config_widget.output_config['make_probe']['h5_group']
+        if self.path in self.f :
+            p = self.f[self.path+'/P'][()]
+            p_amp   = np.abs(p.T)
+            #p_phase = np.angle(p.T)
+            
+            P = self.f[self.path+'/pupil'][()]
+            P_int   = np.abs(P.T)**2
+            P_phase = np.angle(P.T)
+        
+            if self.im_init :
+                self.p_amp_imageView.setImage(  p_amp,   autoRange = False, autoLevels = False, autoHistogramRange = False)
+                #self.p_phase_imageView.setImage(p_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
+                self.P_int_imageView.setImage(  P_int,   autoRange = False, autoLevels = False, autoHistogramRange = False)
+                self.P_phase_imageView.setImage(P_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            else :
+                self.p_amp_imageView.setImage(p_amp)
+                #self.p_phase_imageView.setImage(p_phase)
+                self.P_int_imageView.setImage(P_int)
+                self.P_phase_imageView.setImage(P_phase)
+                self.im_init = True
+        self.f.close()
+    
+    def run_button_clicked(self):
+        # write the config file 
+        #######################
+        self.config_widget.write_file()
+         
+        # Run the command 
+        #################
+        py = os.path.join(root, 'process/make_probe.py')
+        cmd = 'python ' + py + ' ' + self.filename + ' -c ' + self.config_filename
+        self.run_command_widget.run_cmd(cmd)
+    
+
 class Write_config_file_widget(PyQt4.QtGui.QWidget):
     def __init__(self, config_dict, output_filename):
         super(Write_config_file_widget, self).__init__()
@@ -84,7 +220,6 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_stitch_widget, self).__init__()
         
-        self.stitch_array  = np.zeros((2048, 2048), dtype=np.float)
         self.initUI(filename, config_dict)
 
     def initUI(self, filename, config_dict):
@@ -120,9 +255,10 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView = pg.ImageView(view = frame_plt)
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
-        if 'stitch' in self.f :
-            print(self.f['stitch/stitch'].shape)
-            t = self.f['stitch/stitch'].value.T.astype(np.float)
+        self.stitch_path = config_dict['stitch']['h5_group']+'/O'
+        if self.stitch_path in self.f :
+            print(self.f[self.stitch_path].shape)
+            t = self.f[self.stitch_path].value.T.real
             self.imageView.setImage(t)
             self.im_init = True
         else :
@@ -170,7 +306,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
     
     def finished(self):
         self.f = h5py.File(self.filename, 'r')
-        t = self.f['stitch/stitch'].value.T.astype(np.float)
+        t = self.f[self.stitch_path].value.T.real
         if self.im_init :
             self.imageView.setImage(t, autoRange = False, autoLevels = False, autoHistogramRange = False)
         else :
@@ -351,8 +487,8 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         self.X = X
         self.Y = Y
         
-        # select all frames initially
-        self.frames = np.ones((len(X),), dtype=bool)
+        self.frames = np.zeros((len(X),), dtype=bool)
+        self.frames[f['good_frames']] = True
         
         # scatter plot
         ##############
@@ -391,24 +527,34 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         ROI_button_good   = PyQt4.QtGui.QPushButton('good frames')
         ROI_button_bad    = PyQt4.QtGui.QPushButton('bad frames')
         ROI_button_toggle = PyQt4.QtGui.QPushButton('toggle frames')
+        write_button      = PyQt4.QtGui.QPushButton('write to file')
         ROI_button_good.clicked.connect(   lambda : self.mask_ROI(self.roi, 0))
         ROI_button_bad.clicked.connect(    lambda : self.mask_ROI(self.roi, 1))
         ROI_button_toggle.clicked.connect( lambda : self.mask_ROI(self.roi, 2))
+        write_button.clicked.connect(               self.write_good_frames)
         
         scatter_plot = pg.PlotWidget(title='x,y scatter plot', left='y position', bottom='x position')
         scatter_plot.addItem(self.roi)
         scatter_plot.addItem(self.s1)
         scatter_plot.addItem(self.s2)
-
+        
         hbox = PyQt4.QtGui.QHBoxLayout()
         hbox.addWidget(ROI_button_good)
         hbox.addWidget(ROI_button_bad)
         hbox.addWidget(ROI_button_toggle)
+        hbox.addWidget(write_button)
         hbox.addStretch(1)
-
+        
         layout.addWidget(scatter_plot   , 0, 0, 1, 1)
         layout.addLayout(hbox           , 1, 0, 1, 1)
         
+        f.close()
+
+    def write_good_frames(self):
+        f = h5py.File(self.filename)
+        if 'good_frames' in f :
+            del f['good_frames']
+        f['good_frames'] = np.where(self.frames)[0]
         f.close()
 
     def update_selected_points(self):

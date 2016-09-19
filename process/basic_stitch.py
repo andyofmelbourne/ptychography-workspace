@@ -2,20 +2,23 @@
 take a *.pty file and calculate the stitched image
 
 Needs to have the following structure:
-$ h5ls -r MLL_520.pty    
+$ h5ls -r hdf5/MLL_520/MLL_520.pty 
 /                        Group
 /R                       Dataset {119, 3}
 /data                    Dataset {119, 516, 1556}
+/good_frames             Dataset {119}
+/whitefield              Dataset {516, 1556}
 /mask                    Dataset {516, 1556}
+
 /metadata                Group
-/metadata/R_fs_scale     Dataset {SCALAR}
-/metadata/R_ss_scale     Dataset {SCALAR}
-/metadata/R_z_scale      Dataset {SCALAR}
+/metadata/R_meters       Dataset {119, 3}
+/metadata/defocus        Dataset {SCALAR}
 /metadata/detector_distance Dataset {SCALAR}
 /metadata/fs_pixel_size  Dataset {SCALAR}
+/metadata/grid           Dataset {2}
 /metadata/ss_pixel_size  Dataset {SCALAR}
+/metadata/steps          Dataset {119}
 /metadata/wavelength     Dataset {SCALAR}
-/whitefield              Dataset {516, 1556}
 
 the defocus is read from the configuration file
 
@@ -60,10 +63,7 @@ sys.path.append(os.path.join(root, 'utils'))
 sys.path.append(os.path.join(root, 'process'))
 
 import Ptychography.ptychography.era as era
-from Ptychography import DM
-from Ptychography import ERA
 from Ptychography import utils
-from Ptychography import write_cxi
 
 from mpi4py import MPI
 
@@ -232,8 +232,11 @@ if __name__ == '__main__':
     # M = detector distance / sample_defocus
     ############################
     
+    # get the frames to process
+    good_frames = f['good_frames'][()]
+
     # get the original shift coordinates
-    R = f['metadata/R_meters'][()].astype(np.float)
+    R = f['metadata/R_meters'][list(good_frames)].astype(np.float)
     
     # get the Magnification
     M = f['/metadata/detector_distance'].value / params['stitch']['defocus']
@@ -243,7 +246,7 @@ if __name__ == '__main__':
     R[:, 1] *= M / f['/metadata/fs_pixel_size'].value
     
     R = np.rint(R).astype(np.int)
-    O, P = OP_sup(f['data'][()].astype(np.float), R, f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
+    O, P = OP_sup(f['data'][list(good_frames)].astype(np.float), R, f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
     
     # write the result 
     ##################
@@ -253,21 +256,26 @@ if __name__ == '__main__':
     else :
         g = f
         outputdir = os.path.split(args.filename)[0]
-
-    key = params['stitch']['h5_group']+'/stitch'
+    
+    key = params['stitch']['h5_group']+'/O'
     if key in g :
         del g[key]
-    g[key] = O.real
-
+    g[key] = O.astype(np.complex128)
+    
     key = params['stitch']['h5_group']+'/R'
     if key in g :
         del g[key]
     g[key] = R
-
+    
     key = params['stitch']['h5_group']+'/whitefield'
     if key in g :
         del g[key]
     g[key] = P.real
+    
+    key = params['stitch']['h5_group']+'/defocus'
+    if key in g :
+        del g[key]
+    g[key] = params['stitch']['defocus']
     g.close()
     
     # copy the config file

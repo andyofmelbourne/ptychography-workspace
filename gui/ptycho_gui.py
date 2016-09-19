@@ -19,9 +19,6 @@ root = os.path.split(root)[0]
 sys.path.append(os.path.join(root, 'utils'))
 sys.path.append(os.path.join(root, 'process'))
 
-for s in sys.path:
-    print s
-
 from Ptychography import utils
 
 #from widgets import Write_config_file_widget
@@ -29,6 +26,7 @@ from widgets import Show_stitch_widget
 from widgets import Show_frames_widget
 from widgets import Select_frames_widget
 from widgets import Show_frames_selection_widget
+from widgets import Mask_maker_widget
 
 def load_stitch_config(filename):
     # if config is non then read the default from the *.pty dir
@@ -54,22 +52,26 @@ class Gui(PyQt4.QtGui.QTabWidget):
 
     def initUI(self, filename):
         self.tabs = []
+            
+        self.setMovable(True)
+        #self.setTabsClosable(True)
 
         # Show frames tab
         #################
         self.tabs.append( Show_frames_selection_widget(filename) )
         self.addTab(self.tabs[-1], "show frames")
-        self.setWindowTitle("testing")
 
         # Show stitch tab
         #################
         # load the default config file
         params = load_stitch_config(filename)
-        
         self.tabs.append( Show_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "show stitch")
-        self.setWindowTitle("testing 2")
         
+        # mask Maker
+        ############
+        self.tabs.append( Mask_maker_widget(filename, 'mask', filename, 'mask') )
+        self.addTab(self.tabs[-1], "mask maker")
 
 def gui(filename):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C

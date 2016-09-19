@@ -530,8 +530,17 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
 class Mask_maker_widget(PyQt4.QtGui.QWidget):
     """
     """
-    def __init__(self, cspad, mask = None, output_file=None, output_path=None):
+    cspad_psana_shape = (4, 8, 185, 388)
+    cspad_geom_shape  = (1480, 1552)
+
+    def __init__(self, fnam, mask = None, output_file=None, output_path=None):
         super(Mask_maker_widget, self).__init__()
+
+        f = h5py.File(fnam, 'r')
+        cspad = f['whitefield'][()]
+
+        mask = f[mask][()]
+        f.close()
         
         # this is not in fact a cspad image
         self.cspad_shape_flag = 'other'
@@ -557,8 +566,8 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.mask_edges    = False
         self.mask_unbonded = False
 
-        self.unbonded_pixels = unbonded_pixels()
-        self.asic_edges      = asic_edges()
+        self.unbonded_pixels = self.make_unbonded_pixels()
+        self.asic_edges      = self.make_asic_edges()
         if mask is not None :
             self.mask_clicked  = mask
         else :
@@ -693,7 +702,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
         ## save mask button
         #################################
-        save_button = QtGui.QPushButton('save mask')
+        save_button = PyQt4.QtGui.QPushButton('save mask')
         save_button.clicked.connect(self.save_mask)
 
         # rectangular ROI selection
@@ -701,7 +710,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.roi = pg.RectROI([-200,-200], [100, 100])
         self.plot.addItem(self.roi)
         self.roi.setZValue(10)                       # make sure ROI is drawn above image
-        ROI_button = QtGui.QPushButton('mask rectangular ROI')
+        ROI_button = PyQt4.QtGui.QPushButton('mask rectangular ROI')
         ROI_button.clicked.connect(lambda : self.mask_ROI(self.roi))
 
         # circular ROI selection
@@ -709,44 +718,44 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.roi_circle = pg.CircleROI([-200,200], [101, 101])
         self.plot.addItem(self.roi_circle)
         self.roi.setZValue(10)                       # make sure ROI is drawn above image
-        ROI_circle_button = QtGui.QPushButton('mask circular ROI')
+        ROI_circle_button = PyQt4.QtGui.QPushButton('mask circular ROI')
         ROI_circle_button.clicked.connect(lambda : self.mask_ROI_circle(self.roi_circle))
 
         # histogram mask button
         #################################
-        hist_button = QtGui.QPushButton('mask outside histogram')
+        hist_button = PyQt4.QtGui.QPushButton('mask outside histogram')
         hist_button.clicked.connect(self.mask_hist)
 
         # toggle / mask / unmask checkboxes
         #################################
-        self.toggle_checkbox   = QtGui.QCheckBox('toggle')
-        self.mask_checkbox     = QtGui.QCheckBox('mask')
-        self.unmask_checkbox   = QtGui.QCheckBox('unmask')
+        self.toggle_checkbox   = PyQt4.QtGui.QCheckBox('toggle')
+        self.mask_checkbox     = PyQt4.QtGui.QCheckBox('mask')
+        self.unmask_checkbox   = PyQt4.QtGui.QCheckBox('unmask')
         self.toggle_checkbox.setChecked(True)   
         
-        toggle_group           = QtGui.QButtonGroup()#"masking behaviour")
-        toggle_group.addButton(self.toggle_checkbox)   
-        toggle_group.addButton(self.mask_checkbox)   
-        toggle_group.addButton(self.unmask_checkbox)   
-        toggle_group.setExclusive(True)
+        self.toggle_group           = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
+        self.toggle_group.addButton(self.toggle_checkbox)   
+        self.toggle_group.addButton(self.mask_checkbox)   
+        self.toggle_group.addButton(self.unmask_checkbox)   
+        self.toggle_group.setExclusive(True)
         
         # mouse hover ij value label
         #################################
-        ij_label = QtGui.QLabel()
+        ij_label = PyQt4.QtGui.QLabel()
         disp = 'ss fs {0:5} {1:5}   value {2:2}'.format('-', '-', '-')
         ij_label.setText(disp)
         self.plot.scene.sigMouseMoved.connect( lambda pos: self.mouseMoved(ij_label, pos) )
         
         # unbonded pixels checkbox
         #################################
-        unbonded_checkbox = QtGui.QCheckBox('unbonded pixels')
+        unbonded_checkbox = PyQt4.QtGui.QCheckBox('unbonded pixels')
         unbonded_checkbox.stateChanged.connect( self.update_mask_unbonded )
         if self.cspad_shape_flag == 'other' :
             unbonded_checkbox.setEnabled(False)
         
         # asic edges checkbox
         #################################
-        edges_checkbox = QtGui.QCheckBox('asic edges')
+        edges_checkbox = PyQt4.QtGui.QCheckBox('asic edges')
         edges_checkbox.stateChanged.connect( self.update_mask_edges )
         if self.cspad_shape_flag == 'other' :
             edges_checkbox.setEnabled(False)
@@ -757,7 +766,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
         # Create a grid layout to manage the widgets size and position
         #################################
-        layout = QtGui.QGridLayout()
+        layout = PyQt4.QtGui.QGridLayout()
         self.setLayout(layout)
 
         ## Add widgets to the layout in their proper positions
@@ -813,6 +822,66 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
                     self.display_RGB[j0, i0, :] = np.array([0,0,1]) * self.cspad_max
             
             self.plot.setImage(self.display_RGB, autoRange = False, autoLevels = False, autoHistogramRange = False)
+    
+    def make_unbonded_pixels(self):
+        cspad_psana_shape = self.cspad_psana_shape
+        cspad_geom_shape  = self.cspad_geom_shape
+
+        def ijkl_to_ss_fs(cspad_ijkl):
+            """ 
+            0: 388        388: 2 * 388  2*388: 3*388  3*388: 4*388
+            (0, 0, :, :)  (1, 0, :, :)  (2, 0, :, :)  (3, 0, :, :)
+            (0, 1, :, :)  (1, 1, :, :)  (2, 1, :, :)  (3, 1, :, :)
+            (0, 2, :, :)  (1, 2, :, :)  (2, 2, :, :)  (3, 2, :, :)
+            ...           ...           ...           ...
+            (0, 7, :, :)  (1, 7, :, :)  (2, 7, :, :)  (3, 7, :, :)
+            """
+            if cspad_ijkl.shape != cspad_psana_shape :
+                raise ValueError('cspad input is not the required shape:' + str(cspad_psana_shape) )
+
+            cspad_ij = np.zeros(cspad_geom_shape, dtype=cspad_ijkl.dtype)
+            for i in range(4):
+                cspad_ij[:, i * cspad_psana_shape[3]: (i+1) * cspad_psana_shape[3]] = cspad_ijkl[i].reshape((cspad_psana_shape[1] * cspad_psana_shape[2], cspad_psana_shape[3]))
+
+            return cspad_ij
+
+        mask = np.ones(cspad_psana_shape)
+
+        for q in range(cspad_psana_shape[0]):
+            for p in range(cspad_psana_shape[1]):
+                for a in range(2):
+                    for i in range(19):
+                        mask[q, p, i * 10, i * 10] = 0
+                        mask[q, p, i * 10, i * 10 + cspad_psana_shape[-1]//2] = 0
+
+        mask_slab = ijkl_to_ss_fs(mask)
+
+        import scipy.signal
+        kernal = np.array([ [0,1,0], [1,1,1], [0,1,0] ], dtype=np.float)
+        mask_pad = scipy.signal.convolve(1 - mask_slab.astype(np.float), kernal, mode = 'same') < 1
+        return mask_pad
+
+    def make_asic_edges(self, arrayin = None, pad = 0):
+        mask_edges = np.ones(self.cspad_geom_shape, dtype=np.bool)
+        mask_edges[:: 185, :] = 0
+        mask_edges[184 :: 185, :] = 0
+        mask_edges[:, :: 194] = 0
+        mask_edges[:, 193 :: 194] = 0
+
+        if pad != 0 :
+            mask_edges = scipy.signal.convolve(1 - mask_edges.astype(np.float), np.ones((pad, pad), dtype=np.float), mode = 'same') < 1
+        return mask_edges
+
+    def edges(self, shape, pad = 0):
+        mask_edges = np.ones(shape)
+        mask_edges[0, :]  = 0
+        mask_edges[-1, :] = 0
+        mask_edges[:, 0]  = 0
+        mask_edges[:, -1] = 0
+
+        if pad != 0 :
+            mask_edges = scipy.signal.convolve(1 - mask_edges.astype(np.float), np.ones((pad, pad), dtype=np.float), mode = 'same') < 1
+        return mask_edges
 
 def run_and_log_command():
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C

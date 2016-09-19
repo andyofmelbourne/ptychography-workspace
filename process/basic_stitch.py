@@ -185,7 +185,7 @@ def OP_sup(I, R, whitefield, O, mask, iters=4):
         O, P_heatmap = psup_O(I, P, R, O.shape, None)
         P, O_heatmap = psup_P(I, O, R)
         print i, np.sum( (O0 - O)**2 )
-    return O
+    return O, P
 
 
 def parse_cmdline_args():
@@ -233,9 +233,7 @@ if __name__ == '__main__':
     ############################
     
     # get the original shift coordinates
-    R = f['R'][()].astype(np.float)
-    R[:, 0] *= f['/metadata/R_ss_scale'].value
-    R[:, 1] *= f['/metadata/R_fs_scale'].value
+    R = f['metadata/R_meters'][()].astype(np.float)
     
     # get the Magnification
     M = f['/metadata/detector_distance'].value / params['stitch']['defocus']
@@ -245,8 +243,8 @@ if __name__ == '__main__':
     R[:, 1] *= M / f['/metadata/fs_pixel_size'].value
     
     R = np.rint(R).astype(np.int)
-    O = OP_sup(f['data'][()].astype(np.float), R, f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
-
+    O, P = OP_sup(f['data'][()].astype(np.float), R, f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
+    
     # write the result 
     ##################
     if params['stitch']['output_file'] is not None :
@@ -259,9 +257,17 @@ if __name__ == '__main__':
     key = params['stitch']['h5_group']+'/stitch'
     if key in g :
         del g[key]
-        g[key] = O.real
-    else :
-        g[key] = O.real
+    g[key] = O.real
+
+    key = params['stitch']['h5_group']+'/R'
+    if key in g :
+        del g[key]
+    g[key] = R
+
+    key = params['stitch']['h5_group']+'/whitefield'
+    if key in g :
+        del g[key]
+    g[key] = P.real
     g.close()
     
     # copy the config file

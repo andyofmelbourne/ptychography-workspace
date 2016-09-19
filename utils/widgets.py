@@ -256,6 +256,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
         self.stitch_path = config_dict['stitch']['h5_group']+'/O'
+        self.R_path = config_dict['stitch']['h5_group']+'/R'
         if self.stitch_path in self.f :
             print(self.f[self.stitch_path].shape)
             t = self.f[self.stitch_path].value.T.real
@@ -279,16 +280,22 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
+        # set sample and R
+        ##################
+        self.set_button = PyQt4.QtGui.QPushButton('set: O and R', self)
+        self.set_button.clicked.connect(self.set_button_clicked)
+        
         # add a spacer for the labels and such
         verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
-        layout.addWidget(self.imageView,           0, 1, 3, 1)
+        layout.addWidget(self.imageView,           0, 1, 4, 1)
         layout.addWidget(self.config_widget,       0, 0, 1, 1)
         layout.addWidget(self.run_button,          1, 0, 1, 1)
-        layout.addItem(verticalSpacer,             2, 0, 1, 1)
-        layout.addWidget(self.run_command_widget,  3, 0, 1, 2)
+        layout.addWidget(self.set_button,          2, 0, 1, 1)
+        layout.addItem(verticalSpacer,             3, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  4, 0, 1, 2)
         layout.setColumnStretch(1, 1)
         layout.setColumnMinimumWidth(0, 250)
         self.layout = layout
@@ -312,6 +319,20 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         else :
             self.imageView.setImage(t)
         self.f.close()
+    
+    def set_button_clicked(self):
+        f = h5py.File(self.filename)
+        O = f[self.stitch_path].value
+        R = f[self.R_path].value
+        print('writing O and R to file')
+        if 'O' in f :
+            del f['O']
+        f['O'] = O
+        if 'R' in f :
+            del f['R']
+        f['R'] = R
+        print('Done')
+        f.close()
 
 class Show_frames_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename):

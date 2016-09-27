@@ -18,6 +18,141 @@ import copy
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
 
+class Phase_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, filename, config_dict):
+        super(Phase_widget, self).__init__()
+        
+        self.initUI(filename, config_dict)
+
+    def initUI(self, filename, config_dict):
+        # get the output directory
+        self.output_dir = os.path.split(filename)[0]
+        self.config_filename = os.path.join(self.output_dir, 'phase.ini')
+        self.filename = filename
+        self.f = h5py.File(filename, 'r')
+        
+        # Make a grid layout
+        layout = PyQt4.QtGui.QGridLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+        
+        # config widget
+        ###############
+        self.config_widget = Write_config_file_widget(config_dict, self.config_filename)
+        
+        # sample amplitude plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'sample amplitude') 
+        self.o_amp_imageView = pg.ImageView(view = frame_plt)
+        self.o_amp_imageView.ui.menuBtn.hide()
+        self.o_amp_imageView.ui.roiBtn.hide()
+
+        # sample phase plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'sample phase') 
+        self.o_phase_imageView = pg.ImageView(view = frame_plt)
+        self.o_phase_imageView.ui.menuBtn.hide()
+        self.o_phase_imageView.ui.roiBtn.hide()
+        
+        # probe amplitude plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'probe amplitude') 
+        self.p_amp_imageView = pg.ImageView(view = frame_plt)
+        self.p_amp_imageView.ui.menuBtn.hide()
+        self.p_amp_imageView.ui.roiBtn.hide()
+
+        # probe phase plot
+        #############################
+        frame_plt = pg.PlotItem(title = 'probe phase') 
+        self.p_phase_imageView = pg.ImageView(view = frame_plt)
+        self.p_phase_imageView.ui.menuBtn.hide()
+        self.p_phase_imageView.ui.roiBtn.hide()
+        self.f.close()
+        
+        self.im_init = False
+        self.show_OP()
+        
+        # run command widget
+        ####################
+        self.run_command_widget = Run_and_log_command()
+        self.run_command_widget.finished_signal.connect(self.show_OP)
+        
+        # run command button
+        ####################
+        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button.clicked.connect(self.run_button_clicked)
+        
+        # set sample and probe
+        ######################
+        self.set_button = PyQt4.QtGui.QPushButton('set: O, P', self)
+        self.set_button.clicked.connect(self.set_button_clicked)
+        
+        # add a spacer for the labels and such
+        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        
+        # set the layout
+        ################
+        layout.addWidget(self.o_amp_imageView,           0, 1, 1, 1)
+        layout.addWidget(self.o_phase_imageView,         0, 2, 1, 1)
+        layout.addWidget(self.p_amp_imageView,           1, 1, 1, 1)
+        layout.addWidget(self.p_phase_imageView,         1, 2, 1, 1)
+        
+        layout.addWidget(self.config_widget,       0, 0, 1, 1)
+        layout.addWidget(self.run_button,          1, 0, 1, 1)
+        layout.addWidget(self.set_button,          2, 0, 1, 1)
+        layout.addItem(verticalSpacer,             3, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  4, 0, 1, 2)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnMinimumWidth(1, 550)
+        layout.setColumnMinimumWidth(2, 150)
+        self.layout = layout
+
+    def show_OP(self):
+        path = self.config_widget.output_config['phase']['h5_group']
+        if path in self.f :
+            self.f = h5py.File(self.filename, 'r')
+             
+            p = self.f[path+'/P'][()]
+            p_amp   = np.abs(p.T)
+            p_phase = np.angle(p.T)
+            
+            o = self.f[path+'/O'][()]
+            o_amp   = np.abs(o.T)
+            o_phase = np.angle(o.T)
+            
+            self.o_amp_imageView.setImage(  o_amp,   autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.o_phase_imageView.setImage(o_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.p_amp_imageView.setImage(  p_amp,   autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.p_phase_imageView.setImage(p_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.f.close()
+
+    def run_button_clicked(self):
+        # write the config file 
+        #######################
+        self.config_widget.write_file()
+         
+        # Run the command 
+        #################
+        py = os.path.join(root, 'process/phase.py')
+        cmd = 'mpirun -n 16 python ' + py + ' ' + self.filename + ' ' + self.config_filename
+        self.run_command_widget.run_cmd(cmd)
+    
+    def set_button_clicked(self):
+        path = self.config_widget.output_config['phase']['h5_group']
+        f = h5py.File(self.filename)
+        P = f[path+'/P'][()]
+        O = f[path+'/O'][()]
+        print('writing O and P to file')
+        if 'P' in f :
+            del f['P']
+        f['P'] = P
+        if 'O' in f :
+            del f['O']
+        f['O'] = O
+        print('Done')
+        f.close()
+
 class Show_probe_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_probe_widget, self).__init__()
@@ -272,13 +407,12 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView.ui.roiBtn.hide()
         self.stitch_path = config_dict['stitch']['h5_group']+'/O'
         self.R_path = config_dict['stitch']['h5_group']+'/R'
+        self.im_init = False
         if self.stitch_path in self.f :
             print(self.f[self.stitch_path].shape)
             t = self.f[self.stitch_path].value.T.real
             self.imageView.setImage(t)
             self.im_init = True
-        else :
-            self.im_init = False
         self.f.close()
         
         # config widget
@@ -289,7 +423,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         ####################
         self.run_command_widget = Run_and_log_command()
         self.run_command_widget.finished_signal.connect(self.finished)
-
+        
         # run command button
         ####################
         self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
@@ -297,7 +431,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         
         # set sample and R
         ##################
-        self.set_button = PyQt4.QtGui.QPushButton('set: O and R', self)
+        self.set_button = PyQt4.QtGui.QPushButton('set: O, R and defocus', self)
         self.set_button.clicked.connect(self.set_button_clicked)
         
         # add a spacer for the labels and such
@@ -331,8 +465,10 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         t = self.f[self.stitch_path].value.T.real
         if self.im_init :
             self.imageView.setImage(t, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.im_init = True
         else :
             self.imageView.setImage(t)
+            self.im_init = True
         self.f.close()
     
     def set_button_clicked(self):
@@ -346,6 +482,10 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         if 'R' in f :
             del f['R']
         f['R'] = R
+        
+        if 'metadata/defocus' in f :
+            del f['metadata/defocus']
+        f['metadata/defocus'] = self.config_widget.output_config['stitch']['defocus']
         print('Done')
         f.close()
 
@@ -1094,7 +1234,7 @@ def run_and_log_command():
     print('app exec')
     Mwin.show()
     app.exec_()
-    
+
 
 if __name__ == '__main__':
     run_and_log_command()

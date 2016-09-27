@@ -96,10 +96,17 @@ if __name__ == '__main__':
         i, j  = np.meshgrid(i, j, indexing='ij')
         phase = -1.0J * np.pi * lamb * defocus * dq**2 * (i**2 + j**2)
     else :
-        phase = np.zeros_like(I)
-        
+        phase = np.zeros_like(I) + 0J
+
     P = np.sqrt(I) * np.fft.fftshift(np.exp(phase))
     
+    # add phase from file
+    #####################
+    if params['make_probe']['pupil_phase_h5'] is not None :
+        pupil_phase = h5py.File(params['make_probe']['pupil_phase_h5'])[params['make_probe']['pupil_phase_path']][()]
+        print P.dtype, P.shape, pupil_phase.dtype, pupil_phase.shape
+        P *= np.exp(1.0J * pupil_phase)
+        
     # propagate
     ###########
     prop, iprop = era.make_prop(Fresnel, P.shape)

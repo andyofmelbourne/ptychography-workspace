@@ -28,6 +28,7 @@ from widgets import Select_frames_widget
 from widgets import Show_frames_selection_widget
 from widgets import Mask_maker_widget
 from widgets import Show_probe_widget
+from widgets import Phase_widget
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -79,8 +80,8 @@ class Gui(PyQt4.QtGui.QTabWidget):
         #################
         # show real-space / detector-space probe
         # change defocus
-        params = load_config(filename, name='make_probe.ini')
-        self.tabs.append( Show_probe_widget(filename, params) )
+        params_probe = load_config(filename, name='make_probe.ini')
+        self.tabs.append( Show_probe_widget(filename, params_probe) )
         self.addTab(self.tabs[-1], "show probe")
 
         # sample maker tab
@@ -92,6 +93,10 @@ class Gui(PyQt4.QtGui.QTabWidget):
         
         # phase tab
         ##################
+        params = load_config(filename, name='phase.ini')
+        self.tabs.append( Phase_widget(filename, params) )
+        self.addTab(self.tabs[-1], "phase")
+        
 
 def gui(filename):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C

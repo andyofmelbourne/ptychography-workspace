@@ -159,6 +159,31 @@ def overwrite_or_create(f, key, value):
         del f[key]
     f[key] = value
 
+def make_crop_function(mask):
+    indices, mask_crop = crop_to_nearest_pow2(mask)
+    crop = lambda x : x.ravel()[indices].reshape(mask_crop.shape)
+    return crop
+
+def make_crop_and_bin_function(mask, bin=1, apply_crop = True):
+    if apply_crop :
+        crop = make_crop_function(mask)
+    else :
+        crop = lambda x : x
+    
+    crop_bin = lambda x : bin_down(crop(x), n=bin)
+    return crop_bin
+
+def make_crop_and_bin_function_with_normalisation(crop_and_bin_func, mask):
+    mask_crop_bin = crop_and_bin_func(mask)
+    
+    mask_norm = mask_crop_bin.copy()
+    mask_norm[mask_norm==0] = 1
+    mask_norm = mask_norm.astype(np.float)
+    
+    # crop and bin function with mask normalisation function
+    crop_bin_I = lambda x : crop_and_bin_func(x.astype(np.float) * mask) / mask_norm
+    return crop_bin_I
+
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
     f = h5py.File(args.filename)
@@ -167,26 +192,17 @@ if __name__ == '__main__':
     
     # crop function
     if params['crop_and_bin']['crop_to_mask'] is True :
-        indices, mask_crop = crop_to_nearest_pow2(mask)
-        
-        crop = lambda x : x.ravel()[indices].reshape(mask_crop.shape)
+        apply_crop = True 
     else :
-        crop = lambda x : x
+        apply_crop = False 
+
+    crop_bin = make_crop_and_bin_function(mask, params['crop_and_bin']['bin'], apply_crop)
     
-    # crop and bin function
-    crop_bin = lambda x : bin_down(crop(x), n=params['crop_and_bin']['bin'])
-    
+    crop_bin_I = make_crop_and_bin_function_with_normalisation(crop_bin, mask)
+
     mask_crop_bin = crop_bin(mask)
-    
-    mask_norm = mask_crop_bin.copy()
-    mask_norm[mask_norm==0] = 1
-    mask_norm = mask_norm.astype(np.float)
-    
     mask_crop_bin = mask_crop_bin > 0
      
-    # crop and bin function with mask normalisation function
-    crop_bin_I = lambda x : crop_bin(x.astype(np.float) * mask) / mask_norm
-    
     # write the result 
     ##################
     if params['crop_and_bin']['output'] is None :
@@ -200,11 +216,11 @@ if __name__ == '__main__':
     overwrite_or_create(g, 'mask', mask_crop_bin)
 
     # Rs 
-    #Rscale = get_new_Rscale(mask.shape, mask_crop_bin.shape, params['crop_and_bin']['bin'], params['crop_and_bin']['bin'])
-    #R = f['R'].value 
-    #R[:, 0] = R[:, 0] * Rscale[0]
-    #R[:, 1] = R[:, 1] * Rscale[1]
-    #overwrite_or_create(g, 'R', R)
+    Rscale = get_new_Rscale(mask.shape, mask_crop_bin.shape, params['crop_and_bin']['bin'], params['crop_and_bin']['bin'])
+    R = f['R'].value 
+    R[:, 0] = R[:, 0] * Rscale[0]
+    R[:, 1] = R[:, 1] * Rscale[1]
+    overwrite_or_create(g, 'R', R)
 
     # whitefield
     overwrite_or_create(g, 'whitefield', crop_bin_I(f['whitefield'][()]))

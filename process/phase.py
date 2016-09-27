@@ -6,6 +6,7 @@ should submit a batch job:
 """
 import h5py
 import time
+import numpy as np
 
 import Ptychography.ptychography.era as era
 from Ptychography import DM
@@ -79,8 +80,8 @@ if __name__ == '__main__':
         
         # get the Fresnel number 
         ########################
-        if params['input']['fresnel'] : 
-            defocus = params['input']['defocus']
+        if params['phase']['fresnel'] : 
+            defocus = params['phase']['defocus']
             lamb = f['metadata/wavelength'][()]
             z    = f['metadata/detector_distance'][()]
             du   = f['metadata/fs_pixel_size'][()]
@@ -88,23 +89,36 @@ if __name__ == '__main__':
             Fresnel = 1 / (dq**2 * lamb * defocus)
         else :
             Fresnel = False
+        f.close()
         
         print 'Fresnel number : ', Fresnel
+        
+        Oout = O.copy()
+        Pout = P.copy()
     else :
-        Fresnel = O = I = R = P = mask = None
+        Fresnel = O = Oout = Pout = I = R = P = mask = None
         
     comm.Barrier()
     
-    alg_iters = config_iters_to_alg_num(params['ptychography']['iters'])
+    alg_iters = config_iters_to_alg_num(params['phase']['iters'])
     
     d0 = time.time()
 
-    in_params = params['ptychography']
+    in_params = params['phase']
     
     eMod = []
     for alg, iters in alg_iters:
         if alg == 'ERA' :
-            Oout, Pout, info =  ERA(I, R, P, O, iters, OP_iters = in_params['op_iters'], \
+            Oout, Pout, info =  ERA(I, R, Pout, Oout, iters, OP_iters = in_params['op_iters'], \
+                          mask = mask, Fresnel = Fresnel, background = None, method = in_params['method'], Pmod_probe = in_params['pmod_probe'] , \
+                          probe_centering = in_params['probe_centering'], hardware = 'cpu', \
+                          alpha = in_params['alpha'], dtype = in_params['dtype'], full_output = True, verbose = False, \
+                          sample_blur = in_params['sample_blur'])
+
+            if rank == 0 : eMod += info['eMod']
+
+        if alg == 'DM' :
+            Oout, Pout, info =  DM(I, R, Pout, Oout, iters, OP_iters = in_params['op_iters'], \
                           mask = mask, Fresnel = Fresnel, background = None, method = in_params['method'], Pmod_probe = in_params['pmod_probe'] , \
                           probe_centering = in_params['probe_centering'], hardware = 'cpu', \
                           alpha = in_params['alpha'], dtype = in_params['dtype'], full_output = True, verbose = False, \
@@ -118,5 +132,31 @@ if __name__ == '__main__':
     ############
     if rank == 0 :
         print '\ntime:', d1-d0
+
+        # output O P and eMod into the input file
+        #########################################
+        f = h5py.File(args.filename)
+        # O
+        ###
+        key = params['phase']['h5_group']+'/O'
+        if key in f :
+            del f[key]
+        f[key] = Oout
+
+        # P
+        ###
+        key = params['phase']['h5_group']+'/P'
+        if key in f :
+            del f[key]
+        f[key] = Pout
+
+        # eMod
+        ######
+        key = params['phase']['h5_group']+'/eMod'
+        if key in f :
+            del f[key]
+        f[key] = np.array(eMod)
+        f.close()
+
         write_cxi(I, info['I'], P, Pout, O, Oout, \
-                  R, R, None, None, mask, eMod, fnam = params['output']['fnam'], compress = True)
+                  R, R, None, None, mask, eMod, fnam = params['phase']['fnam'], compress = True)

@@ -49,7 +49,8 @@ def refine_positions(O, P, R, I, window=7):
     return R_out 
 
 if __name__ == '__main__':
-    f = h5py.File('hdf5/MLL_520/MLL_520_cropped_binned.pty')
+    #f = h5py.File('hdf5/MLL_520/MLL_520_cropped_binned.pty')
+    f = h5py.File(sys.argv[1])
     
     # stitch P
     ###########
@@ -73,6 +74,7 @@ if __name__ == '__main__':
     if key in f:
         del f[key]
     f[key] = R_out
+    f.close()
 
     # get the Magnification
     M = f['/metadata/detector_distance'][()] / f['stitch/defocus'][()]

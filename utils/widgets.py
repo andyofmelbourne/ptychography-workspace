@@ -22,6 +22,12 @@ class Phase_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Phase_widget, self).__init__()
         
+        # make a timer for updating O and P
+        ###################################
+        self.timer = PyQt4.QtCore.QTimer()
+        self.timer.setInterval(2000) # milli-seconds
+        self.timer.timeout.connect(self.show_OP)
+        
         self.initUI(filename, config_dict)
 
     def initUI(self, filename, config_dict):
@@ -29,7 +35,6 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         self.output_dir = os.path.split(filename)[0]
         self.config_filename = os.path.join(self.output_dir, 'phase.ini')
         self.filename = filename
-        self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
         layout = PyQt4.QtGui.QGridLayout()
@@ -68,15 +73,20 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         self.p_phase_imageView = pg.ImageView(view = frame_plt)
         self.p_phase_imageView.ui.menuBtn.hide()
         self.p_phase_imageView.ui.roiBtn.hide()
-        self.f.close()
         
-        self.im_init = False
+        # Modulus error plot
+        ####################
+        self.eMod_plotW = pg.PlotWidget(bottom='iteration', left='error', title = 'Modulus error')
+
         self.show_OP()
         
         # run command widget
         ####################
         self.run_command_widget = Run_and_log_command()
         self.run_command_widget.finished_signal.connect(self.show_OP)
+        
+        # stop the timer when the command has finished
+        self.run_command_widget.finished_signal.connect(self.timer.stop)
         
         # run command button
         ####################
@@ -91,28 +101,52 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         # add a spacer for the labels and such
         verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
         
-        # set the layout
-        ################
-        layout.addWidget(self.o_amp_imageView,           0, 1, 1, 1)
-        layout.addWidget(self.o_phase_imageView,         0, 2, 1, 1)
-        layout.addWidget(self.p_amp_imageView,           1, 1, 1, 1)
-        layout.addWidget(self.p_phase_imageView,         1, 2, 1, 1)
+        # set the layouts
+        #################
         
-        layout.addWidget(self.config_widget,       0, 0, 1, 1)
-        layout.addWidget(self.run_button,          1, 0, 1, 1)
-        layout.addWidget(self.set_button,          2, 0, 1, 1)
-        layout.addItem(verticalSpacer,             3, 0, 1, 1)
-        layout.addWidget(self.run_command_widget,  4, 0, 1, 2)
-        layout.setColumnStretch(2, 1)
-        layout.setColumnMinimumWidth(1, 550)
-        layout.setColumnMinimumWidth(2, 150)
+        # another grid layout for the images
+        ####################################
+        layout_ims = PyQt4.QtGui.QGridLayout()
+        layout_ims.setRowStretch(0, 1)
+        layout_ims.setRowStretch(1, 1)
+        layout_ims.setRowStretch(2, 0)
+        layout_ims.addWidget(self.o_amp_imageView,    0, 0, 1, 1)
+        layout_ims.addWidget(self.o_phase_imageView,  0, 1, 1, 1)
+        layout_ims.addWidget(self.p_amp_imageView,    1, 0, 1, 1)
+        layout_ims.addWidget(self.p_phase_imageView,  1, 1, 1, 1)
+        
+        # make a widget and the grid layout to it
+        W = PyQt4.QtGui.QWidget()
+        W.setLayout(layout_ims)
+        
+        # then make a splitter between the emod plot and the 
+        # images
+        splitter = PyQt4.QtGui.QSplitter(PyQt4.QtCore.Qt.Vertical)
+        splitter.addWidget(W)
+        splitter.addWidget(self.eMod_plotW)
+        layout.addWidget(splitter, 0, 1, 1, 1)
+
+        # another grid layout for the buttons
+        #####################################
+        layout_but = PyQt4.QtGui.QGridLayout()
+        layout.addLayout(layout_but, 0, 0, 1, 1)
+        layout_but.addWidget(self.config_widget,       0, 0, 1, 1)
+        layout_but.addWidget(self.run_button,          1, 0, 1, 1)
+        layout_but.addWidget(self.set_button,          2, 0, 1, 1)
+        layout_but.addItem(verticalSpacer,             3, 0, 1, 1)
+        
+        layout.addWidget(self.run_command_widget,  1, 0, 1, 2)
+        
+        layout.setColumnStretch(1, 1)
+        #layout.setColumnMinimumWidth(1, 550)
+        #layout.setColumnMinimumWidth(2, 150)
         self.layout = layout
 
     def show_OP(self):
+        fopen = True
+        self.f = h5py.File(self.filename, 'r')
         path = self.config_widget.output_config['phase']['h5_group']
         if path in self.f :
-            self.f = h5py.File(self.filename, 'r')
-             
             p = self.f[path+'/P'][()]
             p_amp   = np.abs(p.T)
             p_phase = np.angle(p.T)
@@ -120,11 +154,19 @@ class Phase_widget(PyQt4.QtGui.QWidget):
             o = self.f[path+'/O'][()]
             o_amp   = np.abs(o.T)
             o_phase = np.angle(o.T)
+
+            eMod = self.f[path+'/eMod'][()]
+            self.f.close()
+            fopen = False
             
             self.o_amp_imageView.setImage(  o_amp,   autoRange = False, autoLevels = False, autoHistogramRange = False)
             self.o_phase_imageView.setImage(o_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
             self.p_amp_imageView.setImage(  p_amp,   autoRange = False, autoLevels = False, autoHistogramRange = False)
             self.p_phase_imageView.setImage(p_phase, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.eMod_plotW.clear()
+            self.eMod_plotW.setXRange(0, len(eMod)+1)
+            self.eMod_plotW.plot(eMod)
+        if fopen :
             self.f.close()
 
     def run_button_clicked(self):
@@ -137,6 +179,10 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         py = os.path.join(root, 'process/phase.py')
         cmd = 'mpirun -n 16 python ' + py + ' ' + self.filename + ' ' + self.config_filename
         self.run_command_widget.run_cmd(cmd)
+
+        # start a timer for O and P updates
+        ###################################
+        self.timer.start()
     
     def set_button_clicked(self):
         path = self.config_widget.output_config['phase']['h5_group']
@@ -150,6 +196,7 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         if 'O' in f :
             del f['O']
         f['O'] = O
+        print('sum O : ', np.sum(O))
         print('Done')
         f.close()
 
@@ -426,7 +473,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # set sample and R
@@ -434,20 +481,40 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.set_button = PyQt4.QtGui.QPushButton('set: O, R and defocus', self)
         self.set_button.clicked.connect(self.set_button_clicked)
         
+        # refine positions command widget
+        #################################
+        self.run_ref_widget = Run_and_log_command()
+        self.run_ref_widget.finished_signal.connect(self.ref_positions_done)
+        
+        # refine positions button
+        #################################
+        self.ref_button = PyQt4.QtGui.QPushButton('refine positions', self)
+        self.ref_button.clicked.connect(self.ref_button_clicked)
+        
         # add a spacer for the labels and such
         verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
-        layout.addWidget(self.imageView,           0, 1, 4, 1)
+        layout.addWidget(self.imageView,           0, 1, 5, 1)
         layout.addWidget(self.config_widget,       0, 0, 1, 1)
         layout.addWidget(self.run_button,          1, 0, 1, 1)
-        layout.addWidget(self.set_button,          2, 0, 1, 1)
-        layout.addItem(verticalSpacer,             3, 0, 1, 1)
-        layout.addWidget(self.run_command_widget,  4, 0, 1, 2)
+        layout.addWidget(self.ref_button,          2, 0, 1, 1)
+        layout.addWidget(self.set_button,          3, 0, 1, 1)
+        layout.addItem(verticalSpacer,             4, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  5, 0, 1, 2)
+        layout.addWidget(self.run_ref_widget,      6, 0, 1, 2)
         layout.setColumnStretch(1, 1)
         layout.setColumnMinimumWidth(0, 250)
         self.layout = layout
+
+    def ref_button_clicked(self):
+        py = os.path.join(root, 'process/position_refinement.py')
+        cmd = 'python ' + py + ' ' + self.filename 
+        self.run_ref_widget.run_cmd(cmd)
+
+    def ref_positions_done(self):
+        print('Done!')
 
     def run_button_clicked(self):
         # write the config file 

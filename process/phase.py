@@ -92,6 +92,7 @@ if __name__ == '__main__':
         f.close()
         
         print 'Fresnel number : ', Fresnel
+        print 'sum O : ', np.sum(O)
         
         Oout = O.copy()
         Pout = P.copy()
@@ -113,7 +114,7 @@ if __name__ == '__main__':
                           mask = mask, Fresnel = Fresnel, background = None, method = in_params['method'], Pmod_probe = in_params['pmod_probe'] , \
                           probe_centering = in_params['probe_centering'], hardware = 'cpu', \
                           alpha = in_params['alpha'], dtype = in_params['dtype'], full_output = True, verbose = False, \
-                          sample_blur = in_params['sample_blur'])
+                          sample_blur = in_params['sample_blur'], output_h5file = args.filename, output_h5group = params['phase']['h5_group'], output_h5interval = 1)
 
             if rank == 0 : eMod += info['eMod']
 
@@ -122,7 +123,7 @@ if __name__ == '__main__':
                           mask = mask, Fresnel = Fresnel, background = None, method = in_params['method'], Pmod_probe = in_params['pmod_probe'] , \
                           probe_centering = in_params['probe_centering'], hardware = 'cpu', \
                           alpha = in_params['alpha'], dtype = in_params['dtype'], full_output = True, verbose = False, \
-                          sample_blur = in_params['sample_blur'])
+                          sample_blur = in_params['sample_blur'], output_h5file = args.filename, output_h5group = params['phase']['h5_group'], output_h5interval = 1)
 
             if rank == 0 : eMod += info['eMod']
     

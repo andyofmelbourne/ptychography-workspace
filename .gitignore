@@ -3,4 +3,4 @@
 *.h5
 hdf5/*
 utils/Ptychography/*
-cxi-files/
+cxi_files/*

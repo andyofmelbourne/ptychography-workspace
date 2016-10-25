@@ -926,7 +926,9 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         super(Mask_maker_widget, self).__init__()
 
         f = h5py.File(fnam, 'r')
-        cspad = f['whitefield'][()]
+        
+        #cspad = f['whitefield'][()]
+        cspad = np.sum(f['data'][:10], axis=0)
 
         mask = f[mask][()]
         f.close()

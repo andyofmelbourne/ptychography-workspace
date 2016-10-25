@@ -240,13 +240,19 @@ if __name__ == '__main__':
     print 'R shape:', R.shape
     
     # get the Magnification
-    M = f['/metadata/detector_distance'].value / params['stitch']['defocus']
+    M = Mss = f['/metadata/detector_distance'].value / params['stitch']['defocus']
+
+    if params['stitch']['defocus_fs'] is not None :
+        Mfs = f['/metadata/detector_distance'].value / params['stitch']['defocus_fs']
+    else :
+        Mfs = Mss
     
     # scale R into detector pixels
-    R[:, 0] *= M / f['/metadata/ss_pixel_size'].value
-    R[:, 1] *= M / f['/metadata/fs_pixel_size'].value
-    
+    R[:, 0] *= Mss / f['/metadata/ss_pixel_size'].value
+    R[:, 1] *= Mfs / f['/metadata/fs_pixel_size'].value
+
     R = np.rint(R).astype(np.int)
+    R[:, 0] *= -1
     O, P = OP_sup(f['data'][list(good_frames)].astype(np.float), R[list(good_frames)], f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
     
     # write the result 

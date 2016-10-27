@@ -175,47 +175,11 @@ def make_Zernike_polynomial(n, m):
     
     return p[::-1], A
 
-def make_Zernike_phase_polar(a = None, Noll = None, nms = None, shape=(256, 256)):
-    """
-    Evaluate the Zernike polynomials on the grid 'shape', where the first
-    dimension is the radial component and the second is the azimuthal component.
-    """
-    import numpy as np
-    # generate the radial values
-    rs = np.linspace(0, 1., shape[0]     , dtype=np.float)
-    
-    # generate the azimuthal values
-    ts = np.linspace(0, 2*np.pi, shape[1], dtype=np.float)
-    
-    R = np.zeros_like(rs)
-    T = np.zeros_like(ts)
-    Z = np.zeros(shape, dtype=np.float)
-
-    if a is None :
-        a = np.ones((len(nms),), dtype=np.float)
-    
-    for nm in nms:
-        # get the polynomial coefficients
-        p, A = make_Zernike_polynomial(nm[0], nm[1])
-
-        # evaluate the polynomial on the r theta grid
-        R = np.polyval(p, rs)
-        
-        if nm[1] is 0 : 
-            T.fill(1)
-        elif nm[1] < 0 :
-            T = np.sin(nm[1] * ts)
-        elif nm[1] > 0 :
-            T = np.cos(nm[1] * ts)
-        
-        Z += A * np.outer(R, T)
-    return Z
-
 def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
     """
     Evaluate the Zernike polynomials on the grid 'shape', by filling the 
     shape with a unit circle.
-
+    
     if pixel_norm is True, then the Zernike polynomials are normalsed such that:
     np.sum(Z_n, Z_m) = 0, for n != m and
     np.sum(Z_n, Z_m) = 1, for n == m
@@ -267,3 +231,26 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
         Z[unit_circle_rs] += ai * A * T * R * dA
     
     return r, t, Z
+
+
+def make_Zernike_polynomial_cartesian(n, m):
+    """
+    Given the Zernike indices n and m return the Zerike polynomial coefficients
+    in a cartesian basis.
+
+    The coefficients are stored in a yx matrix of the following form:
+
+      1       x        x**2     x**3
+    1    yx[0,0] yx[0, 1] yx[0, 2] yx[0, 3]
+    y    yx[1,0] yx[1, 1] yx[1, 2] yx[1, 3]
+    y**2 yx[2,0] yx[2, 1] yx[2, 2] yx[2, 3] ...
+    ...
+    
+    such that Z^m_n = \sum_i \sum_j yx[i, j] y**i * x**j
+    
+    Returns 
+    -------
+    yx : ndarray, int
+        
+    """
+    pass

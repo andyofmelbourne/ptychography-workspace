@@ -116,8 +116,6 @@ def make_Noll_index_sequence(max_j):
         # assign js smallest even j --> largest even j
         js += [j for j in jms if j % 2 == 0]
         
-        print nms[-len(ms):]
-        print js[-len(ms):]
         # increment the row index
         n += 1
     
@@ -128,12 +126,144 @@ def make_Noll_index_sequence(max_j):
             Zernike_indices[j] = nm + (Zernike_index_names[nm],)
         else :
             Zernike_indices[j] = nm + ("",)
-
+    
     return Zernike_indices
     
 
 def make_Zernike_polynomial(n, m):
-    pass
+    """
+    Given the Zernike indices n and m return the Zerike polynomial coefficients
+    for the radial and azimuthal components.
 
-def make_Zernike_phase(Noll = None, nms = None):
-    pass
+    Z^m_n(r, \theta) = A^n_m cos(m \theta) R^m_n , for m >= 0
+    
+    Z^m_n(r, \theta) = A^n_m sin(m \theta) R^m_n , for m < 0
+    
+    R^m_n(r) = \sum_k=0^{(n-m)/2} \frac{(-1)^k (n-k)!}{k! ((n-m)/2 - k)! ((n-m)/2 - k))!} 
+               r^{n-2k}
+
+    A^n_m = \sqrt{(2n + 2)/(e_m \pi)}, e_m = 2 if m = 0, e_m = 1 if m != 0
+
+    \iint Z^m_n(r, \theta) Z^m'_n'(r, \theta) r dr d\theta = \delta_{n-n'}\delta_{m-m'}
+
+    Retruns :
+    ---------
+    p : list of integers
+        The polynomial coefficients of R^n_m from largest to 0, e.g. if n = 4 and m = 2 then
+        p_r = [4, 0, -3, 0, 0] representing the polynomial 4 r^4 - 3 r^3.
+
+    A : float
+        A^m_n, the normalisation factor, e.g. if n = 4 and m = 2 then
+        A = \sqrt{10 / \pi}
+    """
+    if (n-m) % 2 == 1 :
+        return [0], 0
+    
+    import math 
+    fact = math.factorial 
+    p = [0 for i in range(n+1)]
+
+    for k in range((n-abs(m))//2+1):
+        # compute the polynomial coefficient for order n - 2k 
+        p[n-2*k] = (-1)**k * fact(n-k) / (fact(k) * fact((n+m)/2 - k) * fact((n-m)/2 - k))
+    
+    # compute the normalisation index
+    if m is 0 :
+        A = math.sqrt( float(n+1) / float(math.pi) )
+    else :
+        A = math.sqrt( float(2*n+2) / float(math.pi) )
+    
+    return p[::-1], A
+
+def make_Zernike_phase_polar(a = None, Noll = None, nms = None, shape=(256, 256)):
+    """
+    Evaluate the Zernike polynomials on the grid 'shape', where the first
+    dimension is the radial component and the second is the azimuthal component.
+    """
+    import numpy as np
+    # generate the radial values
+    rs = np.linspace(0, 1., shape[0]     , dtype=np.float)
+    
+    # generate the azimuthal values
+    ts = np.linspace(0, 2*np.pi, shape[1], dtype=np.float)
+    
+    R = np.zeros_like(rs)
+    T = np.zeros_like(ts)
+    Z = np.zeros(shape, dtype=np.float)
+
+    if a is None :
+        a = np.ones((len(nms),), dtype=np.float)
+    
+    for nm in nms:
+        # get the polynomial coefficients
+        p, A = make_Zernike_polynomial(nm[0], nm[1])
+
+        # evaluate the polynomial on the r theta grid
+        R = np.polyval(p, rs)
+        
+        if nm[1] is 0 : 
+            T.fill(1)
+        elif nm[1] < 0 :
+            T = np.sin(nm[1] * ts)
+        elif nm[1] > 0 :
+            T = np.cos(nm[1] * ts)
+        
+        Z += A * np.outer(R, T)
+    return Z
+
+def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
+    """
+    Evaluate the Zernike polynomials on the grid 'shape', by filling the 
+    shape with a unit circle.
+
+    if pixel_norm is True, then the Zernike polynomials are normalsed such that:
+    np.sum(Z_n, Z_m) = 0, for n != m and
+    np.sum(Z_n, Z_m) = 1, for n == m
+    
+    if pixel norm is False (default), then
+    np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
+    """
+    import numpy as np
+    i, j = np.indices(shape)
+    i    = i - float(shape[0]-1)/2.
+    j    = j - float(shape[1]-1)/2.
+    ij   = i*1j + j
+    r    = np.abs(   i*1j + j )
+    r    = r / np.min(r[0, :])
+    t    = np.angle( i*1j + j )
+
+    unit_circle_rs = np.where(r <= 1.)
+    r[r > 1]       = 0
+    Z = np.zeros_like(r)
+    
+    if pixel_norm :
+        dA = np.sqrt( np.pi / len(unit_circle_rs[0]))
+    else :
+        dA = 1
+
+    if nms is None :
+        j_nm_name = make_Noll_index_sequence(max(Noll))
+        nms = []
+        for j in Noll :
+            nms.append(j_nm_name[j][:2])
+
+    if a is None :
+        a = np.ones((len(nms),), dtype=np.float)
+
+    for ai, nm in zip(a, nms):
+        # get the polynomial coefficients
+        p, A = make_Zernike_polynomial(nm[0], nm[1])
+
+        # evaluate the polynomial on the r theta grid
+        R = np.polyval(p, r[unit_circle_rs])
+        
+        if nm[1] is 0 : 
+            T = 1
+        elif nm[1] < 0 :
+            T = np.sin(nm[1] * t[unit_circle_rs])
+        elif nm[1] > 0 :
+            T = np.cos(nm[1] * t[unit_circle_rs])
+        
+        Z[unit_circle_rs] += ai * A * T * R * dA
+    
+    return r, t, Z

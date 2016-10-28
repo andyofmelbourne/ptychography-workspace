@@ -322,7 +322,7 @@ def make_Zernike_polynomial_cartesian(n, m, order = None):
     ...
     
     such that Z^m_n = \sum_i \sum_j yx[i, j] y**i * x**j
-
+    
     yx[i, j] is given by:
 
     Z^{m}_n  = R^m_n(r) cos(m \theta) 
@@ -355,6 +355,7 @@ def make_Zernike_polynomial_cartesian(n, m, order = None):
         
     Reference 
     -------
+    For a slightly misguided approach see:
     Efficient Cartesian representation of Zernike polynomials in computer memory
     Hedser van Brug
     SPIE Vol. 3190 0277-786X/97
@@ -401,5 +402,108 @@ def make_Zernike_polynomial_cartesian(n, m, order = None):
         A = math.sqrt( float(2*n+2) / float(math.pi) )
     
     return mat, A
+
+def polymul2d(a, b):
+    import numpy as np
+    # there must be a faster way...
+    cl = []
+    for i in range(a.shape[0]):
+        for j in range(a.shape[1]):
+            for ii in range(b.shape[0]):
+                for jj in range(b.shape[1]):
+                    powy = i + ii
+                    powx = j + jj
+                    c = a[i,j]*b[ii,jj]
+                    if abs(c) > 0 :
+                        cl.append([powy, powx, c])
+    cl = np.array(cl)
+    c = np.zeros((np.max(cl[:,0])+1, np.max(cl[:,1])+1), dtype=a.dtype)
+    for i, j, k in cl:
+        c[i, j] += k
+    return c
+
+
+def generate_rectangular_Zernike_polynomials(order=36):
+    # generate the n m indices from the Noll sequence
+    # -----------------------------------------------
+    j_nm_name = make_Noll_index_sequence(order)
+    nms = []
+    for j in Noll :
+        nms.append(j_nm_name[j][:2])
+    
+    # find the maximum order of the polynomials
+    # -----------------------------------------
+    n_max = max([nm[0] for nm in nms])
+    
+    # make the matrix mat[i, j] such that:
+    #   Z[n,m](x, y) = mat[n, m] x**j y**i
+    # ------------------------------------
+    #mat = np.zeros((n_max+1, n_max+1), dtype=np.float)
+
+    # Get the zernike polynomials in matrix form
+    # ------------------------------------------
+    vects = []
+    for nm in nms :
+        mat, A = make_Zernike_polynomial_cartesian(n, m, order = n_max+1)
+        vects.append(mat * A)
+    
+    # define the product method
+    from numpy.polynomial import polynomial as P
+    def product(a, b):
+        c = polymul2d(a, b)
+        #m = P.polyint(
+
+def Gram_Schmit_orthonormalisation(vects, product):
+    """
+    The following algorithm implements the stabilized Gram-Schmidt orthonormalization.
+    
+    The vectors 'vects' are replaced by orthonormal vectors which span the same subspace:
+        vects = [v0, v1, ..., vN]
+        
+        u0 = v1
+        ...
+        uk = vk - \sum_j=0^k-1 proj(uj, vk)
+
+        The basis vectors are then:
+        ek = uk / norm(uk)
+
+        where proj(uj, uk) = product(uk, uj) / product(uj, uj) * uj
+        and   norm(uk)     = product(uj, uj)
+
+    For the modified algorithm :
+        uk = vk - \sum_j=0^k-1 proj(uj, vk)
+        
+        is replaced by:
+                  uk       = uk_{k-2} - proj(uk-1, uk_{k-2})
+            where uk_{0}   = vk       - proj(u0, vk)
+            and   uk_{k+1} = uk_{k}   - proj(uk, uk_{k})
+    
+    Parameters
+    ----------
+    vects : sequence of objects
+        The objects in the sequence 'O' must be acceptable to the function 'product'
+        and they must have add/subtract/scalar multiplication and scalar division 
+        methods.
+
+    product : function of two arguments
+        Must take two 'vectors' of type vn and uk and calculate the vector product.
+        E.g. product([1,2,3], [4,5,6]) = 1*4 + 2*5 + 3*6. 
+    
+    Returns
+    -------
+    basis : sequence of objects
+        The orthonormal basis vectors that span the subspace given by 'vects'.
+    """
+    import math
+    import copy
+    basis = [vects[0] / math.sqrt(product(vects[0], vects[0]))]
+    for k in range(1, len(vects)):
+        u = vects[k]
+        for j in range(k):
+            u = u - basis[j] * product(basis[j], u) 
+           
+        basis.append(u / math.sqrt(product(u, u)))
+    
+    return basis
 
 

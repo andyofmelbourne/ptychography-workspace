@@ -156,7 +156,7 @@ def make_Zernike_polynomial(n, m):
         A^m_n, the normalisation factor, e.g. if n = 4 and m = 2 then
         A = \sqrt{10 / \pi}
     """
-    if (n-m) % 2 == 1 :
+    if (n-m) % 2 == 1 or abs(m) > n or n < 0 :
         return [0], 0
     
     import math 
@@ -175,7 +175,7 @@ def make_Zernike_polynomial(n, m):
     
     return p[::-1], A
 
-def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
+def make_Zernike_phase(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
     """
     Evaluate the Zernike polynomials on the grid 'shape', by filling the 
     shape with a unit circle.
@@ -188,20 +188,19 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
     np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
     """
     import numpy as np
-    i, j = np.indices(shape)
-    i    = i - float(shape[0]-1)/2.
-    j    = j - float(shape[1]-1)/2.
-    ij   = i*1j + j
-    r    = np.abs(   i*1j + j )
-    r    = r / np.min(r[0, :])
-    t    = np.angle( i*1j + j )
-
-    unit_circle_rs = np.where(r <= 1.)
-    r[r > 1]       = 0
+    x = np.linspace(-1, 1, shape[1])
+    y = np.linspace(-1, 1, shape[0])
+    ry, rx = np.meshgrid(y, x, indexing='ij')
+    z      = rx + 1j * ry
+    r      = np.abs(z)
+    t      = np.angle(z)
+    mask = (r <= 1.)
+    
+    unit_circle_rs = np.where(mask)
     Z = np.zeros_like(r)
     
     if pixel_norm :
-        dA = np.sqrt( np.pi / len(unit_circle_rs[0]))
+        dA = np.sqrt( np.pi / float(np.sum(mask)))
     else :
         dA = 1
 
@@ -224,33 +223,183 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
         if nm[1] is 0 : 
             T = 1
         elif nm[1] < 0 :
-            T = np.sin(nm[1] * t[unit_circle_rs])
+            T = np.sin(abs(nm[1]) * t[unit_circle_rs])
         elif nm[1] > 0 :
-            T = np.cos(nm[1] * t[unit_circle_rs])
+            T = np.cos(abs(nm[1]) * t[unit_circle_rs])
         
         Z[unit_circle_rs] += ai * A * T * R * dA
     
     return r, t, Z
 
+def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
+    """
+    Evaluate the Zernike polynomials on the grid 'shape', by filling the 
+    shape with a unit circle.
+    
+    if pixel_norm is True, then the Zernike polynomials are normalsed such that:
+    np.sum(Z_n, Z_m) = 0, for n != m and
+    np.sum(Z_n, Z_m) = 1, for n == m
+    
+    if pixel norm is False (default), then
+    np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
+    """
+    import numpy as np
+    x      = np.linspace(-1, 1, shape[1])
+    y      = np.linspace(-1, 1, shape[0])
+    ry, rx = np.meshgrid(y, x, indexing='ij')
+    r      = np.abs(rx + 1j * ry)
+    
+    mask = (r <= 1.)
+    
+    if pixel_norm :
+        dA = np.sqrt(np.pi / float(np.sum(mask)))
+    else :
+        dA = 1
+    
+    if nms is None :
+        j_nm_name = make_Noll_index_sequence(max(Noll))
+        nms = []
+        for j in Noll :
+            nms.append(j_nm_name[j][:2])
+    
+    # find the maximum order of the polynomials
+    # -----------------------------------------
+    n_max = max([nm[0] for nm in nms])
+    
+    # make the matrix mat[i, j] such that:
+    #   Z[n,m](x, y) = mat[n, m] x**j y**i
+    # ------------------------------------
+    mat = np.zeros((n_max+1, n_max+1), dtype=np.float)
+    
+    if a is None :
+        a = np.ones((len(nms),), dtype=np.float)
+    
+    for ai, nm in zip(a, nms):
+        # get the polynomial coefficients
+        p, A = make_Zernike_polynomial_cartesian(nm[0], nm[1], order = n_max+1)
+        
+        mat += p * ai * A * dA
+    
+    # evaluate the polynomial on the r theta grid
+    Z = mask * np.polynomial.polynomial.polygrid2d(y, x, mat)
+    
+    return y, x, Z
 
-def make_Zernike_polynomial_cartesian(n, m):
+def binomial(N, n):
+    """ 
+    Calculate binomial coefficient NCn = N! / (n! (N-n)!)
+
+    Reference
+    ---------
+    PM 2Ring : http://stackoverflow.com/questions/26560726/python-binomial-coefficient
+    """
+    from math import factorial as fac
+    try :
+        binom = fac(N) // fac(n) // fac(N - n)
+    except ValueError:
+        binom = 0
+    return binom
+
+
+def pascal(m):
+    """
+    Print Pascal's triangle to test binomial()
+    """
+    for x in range(m + 1):
+        print [binomial(x, y) for y in range(x + 1)]
+
+def make_Zernike_polynomial_cartesian(n, m, order = None):
     """
     Given the Zernike indices n and m return the Zerike polynomial coefficients
     in a cartesian basis.
 
     The coefficients are stored in a yx matrix of the following form:
-
-      1       x        x**2     x**3
+    
+         1       x        x**2     x**3
     1    yx[0,0] yx[0, 1] yx[0, 2] yx[0, 3]
     y    yx[1,0] yx[1, 1] yx[1, 2] yx[1, 3]
     y**2 yx[2,0] yx[2, 1] yx[2, 2] yx[2, 3] ...
     ...
     
     such that Z^m_n = \sum_i \sum_j yx[i, j] y**i * x**j
+
+    yx[i, j] is given by:
+
+    Z^{m}_n  = R^m_n(r) cos(m \theta) 
+    Z^{-m}_n = R^m_n(r) sin(m \theta) 
+    
+    Z^{m}_n  =  \sum_{k=0}^{(n-|m|)/2} (-1)^k (n - k)! / (k! ((n+|m|)/2 -k)! ((n-|m|)/2 -k)!) 
+                \sum_{k'=0}^{|m|} binomial(|m|, k') * sin|cos((|m|-k') \pi/2) 
+                \sum_{i=0}^{(n-|m|)/2 - k} binomial((n-|m|)/2 - k, i) 
+                x^{2i + k'} y^{n - 2k - 2i - k'}
+    
+    where sin|cos = cos for m >= 0  
+    and   sin|cos = sin for m < 0  
+    
+    Parameters
+    ----------
+    n, m : int, int
+        Zernike indices
+    
+    order : int
+        zero pads yx so that yx.shape = (order, order). If order is less than
+        the maximum order of the polynomials then an error will be raised.
     
     Returns 
     -------
     yx : ndarray, int
+    
+    A : float
+        A^m_n, the normalisation factor, e.g. if n = 4 and m = 2 then
+        A = \sqrt{10 / \pi}
         
+    Reference 
+    -------
+    Efficient Cartesian representation of Zernike polynomials in computer memory
+    Hedser van Brug
+    SPIE Vol. 3190 0277-786X/97
     """
-    pass
+    from math import factorial as fac
+    import math
+    import numpy as np
+    
+    if (n-m) % 2 == 1 or abs(m) > n or n < 0 :
+        return np.array([0]), 0
+    
+    if m < 0 :
+        t0 = math.pi / 2.
+    else :
+        t0 = 0
+    
+    m   = abs(m)
+    
+    if order is None :
+        order = n + 1
+    
+    mat = np.zeros((order, order), dtype=np.int)
+    
+    for k in range((n-m)/2 + 1):
+        a = (-1)**k * fac(n-k) / (fac(k) * fac((n+m)/2 - k) * fac( (n-m)/2 - k))
+        for kk in range(m+1):
+            b = int(round(math.cos((m-kk)*math.pi/2. - t0)))
+            if b is 0 :
+                continue
+            b *= binomial(m, kk)
+            ab = a*b
+            l  = (n-m)/2 - k
+            for i in range(l + 1):
+                c    = binomial(l, i)
+                abc  = ab*c
+                powx = 2*i + kk
+                powy = n - 2*k - 2*i - kk
+                mat[powy, powx] += abc
+
+    # compute the normalisation index
+    if m is 0 :
+        A = math.sqrt( float(n+1) / float(math.pi) )
+    else :
+        A = math.sqrt( float(2*n+2) / float(math.pi) )
+    
+    return mat, A
+
+

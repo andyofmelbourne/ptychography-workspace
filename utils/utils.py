@@ -129,7 +129,6 @@ def make_Noll_index_sequence(max_j):
     
     return Zernike_indices
     
-
 def make_Zernike_polynomial(n, m):
     """
     Given the Zernike indices n and m return the Zerike polynomial coefficients
@@ -283,9 +282,9 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
     # evaluate the polynomial on the r theta grid
     Z = mask * np.polynomial.polynomial.polygrid2d(y, x, mat)
     
-    return y, x, Z
+    return Z
 
-def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
+def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False, dom=[-1, 1, -1, 1]):
     """
     Evaluate the Zernike polynomials on the grid 'shape', by filling the 
     shape with a unit circle.
@@ -298,14 +297,11 @@ def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, 
     np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
     """
     import numpy as np
-    x      = np.linspace(-1, 1, shape[1])
-    y      = np.linspace(-1, 1, shape[0])
-    #ry, rx = np.meshgrid(y, x, indexing='ij')
-    #r      = np.abs(rx + 1j * ry)
-    #mask = (r <= 1.)
+    x      = np.linspace(dom[2], dom[3] , shape[1])
+    y      = np.linspace(dom[0], dom[1], shape[0])
     
     if pixel_norm :
-        dA = np.sqrt(np.pi / float(shape[0]*shape[1]))
+        dA = (x[-1] - x[0])/float(len(x)) * (y[-1] - y[0])/float(len(y)) #np.sqrt(np.pi / float(shape[0]*shape[1]))
     else :
         dA = 1
     
@@ -326,20 +322,19 @@ def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, 
     
     if a is None :
         a = np.ones((len(nms),), dtype=np.float)
-
+    
     # generate the polynomial coefficients for a rectangular pupil
     basis = generate_rectangular_Zernike_polynomials(nms)
     
-    for ai, nm in zip(a, nms):
+    for ai, b in zip(a, basis):
         # get the polynomial coefficients
-        p, A = make_Zernike_polynomial_cartesian(nm[0], nm[1], order = n_max+1)
-        
-        mat += p * ai * A * dA
+        # p, A = make_Zernike_polynomial_cartesian(nm[0], nm[1], order = n_max+1)
+        mat += b * ai * dA
     
     # evaluate the polynomial on the r theta grid
-    Z = mask * np.polynomial.polynomial.polygrid2d(y, x, mat)
+    Z = np.polynomial.polynomial.polygrid2d(y, x, mat)
     
-    return y, x, Z
+    return y, x, mat, Z
 
 def binomial(N, n):
     """ 
@@ -355,7 +350,6 @@ def binomial(N, n):
     except ValueError:
         binom = 0
     return binom
-
 
 def pascal(m):
     """
@@ -498,11 +492,6 @@ def generate_rectangular_Zernike_polynomials(nms = None, Noll = None, order = No
     # -----------------------------------------
     n_max = max([nm[0] for nm in nms])
     
-    # make the matrix mat[i, j] such that:
-    #   Z[n,m](x, y) = mat[n, m] x**j y**i
-    # ------------------------------------
-    #mat = np.zeros((n_max+1, n_max+1), dtype=np.float)
-
     # Get the zernike polynomials in matrix form
     # ------------------------------------------
     vects = []
@@ -524,6 +513,7 @@ def generate_rectangular_Zernike_polynomials(nms = None, Noll = None, order = No
     basis = Gram_Schmit_orthonormalisation(vects, product)
     #return basis, vects, product
     return basis
+
 
 def Gram_Schmit_orthonormalisation(vects, product):
     """

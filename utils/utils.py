@@ -285,6 +285,62 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
     
     return y, x, Z
 
+def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, shape=(256, 256), pixel_norm=False):
+    """
+    Evaluate the Zernike polynomials on the grid 'shape', by filling the 
+    shape with a unit circle.
+    
+    if pixel_norm is True, then the Zernike polynomials are normalsed such that:
+    np.sum(Z_n, Z_m) = 0, for n != m and
+    np.sum(Z_n, Z_m) = 1, for n == m
+    
+    if pixel norm is False (default), then
+    np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
+    """
+    import numpy as np
+    x      = np.linspace(-1, 1, shape[1])
+    y      = np.linspace(-1, 1, shape[0])
+    #ry, rx = np.meshgrid(y, x, indexing='ij')
+    #r      = np.abs(rx + 1j * ry)
+    #mask = (r <= 1.)
+    
+    if pixel_norm :
+        dA = np.sqrt(np.pi / float(shape[0]*shape[1]))
+    else :
+        dA = 1
+    
+    if nms is None :
+        j_nm_name = make_Noll_index_sequence(max(Noll))
+        nms = []
+        for j in Noll :
+            nms.append(j_nm_name[j][:2])
+    
+    # find the maximum order of the polynomials
+    # -----------------------------------------
+    n_max = max([nm[0] for nm in nms])
+    
+    # make the matrix mat[i, j] such that:
+    #   Z[n,m](x, y) = mat[n, m] x**j y**i
+    # ------------------------------------
+    mat = np.zeros((n_max+1, n_max+1), dtype=np.float)
+    
+    if a is None :
+        a = np.ones((len(nms),), dtype=np.float)
+
+    # generate the polynomial coefficients for a rectangular pupil
+    basis = generate_rectangular_Zernike_polynomials(nms)
+    
+    for ai, nm in zip(a, nms):
+        # get the polynomial coefficients
+        p, A = make_Zernike_polynomial_cartesian(nm[0], nm[1], order = n_max+1)
+        
+        mat += p * ai * A * dA
+    
+    # evaluate the polynomial on the r theta grid
+    Z = mask * np.polynomial.polynomial.polygrid2d(y, x, mat)
+    
+    return y, x, Z
+
 def binomial(N, n):
     """ 
     Calculate binomial coefficient NCn = N! / (n! (N-n)!)
@@ -417,19 +473,26 @@ def polymul2d(a, b):
                     if abs(c) > 0 :
                         cl.append([powy, powx, c])
     cl = np.array(cl)
-    c = np.zeros((np.max(cl[:,0])+1, np.max(cl[:,1])+1), dtype=a.dtype)
+    c = np.zeros((int(np.max(cl[:,0]))+1, int(np.max(cl[:,1]))+1), dtype=a.dtype)
     for i, j, k in cl:
-        c[i, j] += k
+        c[int(i), int(j)] += k
     return c
 
 
-def generate_rectangular_Zernike_polynomials(order=36):
+def generate_rectangular_Zernike_polynomials(nms = None, Noll = None, order = None):
     # generate the n m indices from the Noll sequence
     # -----------------------------------------------
-    j_nm_name = make_Noll_index_sequence(order)
-    nms = []
-    for j in Noll :
-        nms.append(j_nm_name[j][:2])
+    if Noll is not None :
+        j_nm_name = make_Noll_index_sequence(max(Noll))
+        nms = []
+        for j in Noll :
+            nms.append(j_nm_name[j][:2])
+    
+    if order is not None :
+        j_nm_name = make_Noll_index_sequence(order)
+        nms = []
+        for j in range(1, order+1) :
+            nms.append(j_nm_name[j][:2])
     
     # find the maximum order of the polynomials
     # -----------------------------------------
@@ -443,15 +506,24 @@ def generate_rectangular_Zernike_polynomials(order=36):
     # Get the zernike polynomials in matrix form
     # ------------------------------------------
     vects = []
-    for nm in nms :
+    for n, m in nms :
         mat, A = make_Zernike_polynomial_cartesian(n, m, order = n_max+1)
         vects.append(mat * A)
     
     # define the product method
+    # -------------------------
+    dom = [-1., 1., -1., 1.]
     from numpy.polynomial import polynomial as P
     def product(a, b):
         c = polymul2d(a, b)
-        #m = P.polyint(
+        c = P.polyint(c, lbnd = dom[0], axis=0)
+        c = P.polyint(c, lbnd = dom[2], axis=1)
+        v = P.polyval2d(dom[1], dom[3], c)
+        return v
+    
+    basis = Gram_Schmit_orthonormalisation(vects, product)
+    #return basis, vects, product
+    return basis
 
 def Gram_Schmit_orthonormalisation(vects, product):
     """

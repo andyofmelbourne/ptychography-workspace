@@ -9,8 +9,11 @@ import PyQt4.QtCore
 import signal
 
 
-sys.path.append(os.path.abspath('../utils/'))
-sys.path.append(os.path.abspath('../process/'))
+root = os.path.split(os.path.abspath(__file__))[0]
+root = os.path.split(root)[0]
+
+sys.path.append(os.path.join(root, 'utils'))
+sys.path.append(os.path.join(root, 'process'))
 
 from widgets import Show_frames_widget
 
@@ -38,8 +41,8 @@ def show_frames(f):
     Mwin = PyQt4.QtGui.QMainWindow()
     Mwin.setWindowTitle('View frames and sample positions')
     
-    cw = Show_frames_widget()
-    cw.initUI(f)
+    cw = Show_frames_widget(f)
+    cw.initUI()
     
     # add the central widget to the main window
     Mwin.setCentralWidget(cw)
@@ -50,4 +53,4 @@ def show_frames(f):
 if __name__ == '__main__':
     args = parse_cmdline_args()
     f = h5py.File(args.filename, 'r')
-    show_frames(f)
+    show_frames(args.filename)

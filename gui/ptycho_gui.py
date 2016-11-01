@@ -29,6 +29,7 @@ from widgets import Show_frames_selection_widget
 from widgets import Mask_maker_widget
 from widgets import Show_probe_widget
 from widgets import Phase_widget
+from widgets import config_default
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -48,14 +49,29 @@ def load_config(filename, name = 'basic_stitch.ini'):
     params = utils.parse_parameters(conf)
     return params
         
+def init_file(filename):
+    f = h5py.File(filename)
+    print(config_default['output'], f.keys(), config_default['output'] not in f.keys())
+    if config_default['output'] not in f.keys():
+        # add the output group
+        g = f.create_group(config_default['output'])
+
+        # add the good_frames (assume they are all good)
+        g['good_frames'] = np.arange(len(f[config_default['input']['data']]))
+
+    # done 
+    f.close()
 
 class Gui(PyQt4.QtGui.QTabWidget):
     def __init__(self):
         super(Gui, self).__init__()
 
     def initUI(self, filename):
+        # initialise the scratch space if not done already
+        init_file(filename)
+        
         self.tabs = []
-            
+
         self.setMovable(True)
         #self.setTabsClosable(True)
 
@@ -64,6 +80,7 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.tabs.append( Show_frames_selection_widget(filename) )
         self.addTab(self.tabs[-1], "show frames")
 
+        """
         # Show stitch tab
         #################
         # load the default config file
@@ -96,6 +113,7 @@ class Gui(PyQt4.QtGui.QTabWidget):
         params = load_config(filename, name='phase.ini')
         self.tabs.append( Phase_widget(filename, params) )
         self.addTab(self.tabs[-1], "phase")
+        """
         
 
 def gui(filename):

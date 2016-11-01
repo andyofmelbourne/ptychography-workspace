@@ -1,4 +1,16 @@
 #!/usr/bin/env python
+
+"""
+All of the widgets here read/write to a h5 file. 
+It needs to have the following structure:
+    data                : /entry_1/data_1/data
+    positions [x, y, z] : /entry_1/sample_N/geometry/translation 
+    detector pixel directions : /entry_1/instrument_1/detector_1/basis_vectors
+
+Ideally these should be defined in a config file, but not now.
+
+"""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -17,6 +29,15 @@ import copy
 
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
+
+# set the config defaults 
+config_default = {}
+config_default['input'] = {} 
+config_default['input']['data'] = '/entry_1/data_1/data'
+config_default['input']['R']    = '/entry_1/sample_3/geometry/translation'
+config_default['input']['whitefield'] = '/process_2/powder'
+
+config_default['output'] = 'process_3'
 
 class Phase_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):
@@ -557,13 +578,18 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         f.close()
 
 class Show_frames_widget(PyQt4.QtGui.QWidget):
-    def __init__(self, filename):
+    def __init__(self, filename, config = config_default):
         super(Show_frames_widget, self).__init__()
         
         self.filename = filename
+        self.config   = config
         self.initUI()
 
     def initUI(self):
+        """
+        the frame view has fs --> left and ss --> down
+        so we should scatter plot the coordinates accourdingly
+        """
         # Make a grid layout
         layout = PyQt4.QtGui.QGridLayout()
         
@@ -577,8 +603,8 @@ class Show_frames_widget(PyQt4.QtGui.QWidget):
         
         # X and Y plot 
         ##############
-        R = f['R']
-        X = R[:, 1]
+        R = f[self.config['input']['R']]
+        X = R[:, 0]
         Y = R[:, 0]
         title = 'realspace x (red) and y (green) sample positions in pixel units'
         position_plotsW = pg.PlotWidget(bottom='frame number', left='position', title = title)
@@ -594,7 +620,7 @@ class Show_frames_widget(PyQt4.QtGui.QWidget):
         imageView = pg.ImageView(view = frame_plt)
         imageView.ui.menuBtn.hide()
         imageView.ui.roiBtn.hide()
-        imageView.setImage(f['data'][0].T.astype(np.float))
+        imageView.setImage(f[self.config['input']['data']][0].T.astype(np.float))
         #imageView.show()
 
         # scatter plot
@@ -630,7 +656,7 @@ class Show_frames_widget(PyQt4.QtGui.QWidget):
             s2.setData([X[i]], [Y[i]])
 
             f = h5py.File(self.filename, 'r')
-            imageView.setImage( f['data'][i].T.astype(np.float), autoRange = False, autoLevels = False, autoHistogramRange = False)
+            imageView.setImage( f[self.config['input']['data']][i].T.astype(np.float), autoRange = False, autoLevels = False, autoHistogramRange = False)
             f.close()
             
         vline.sigPositionChanged.connect(replot_frame)
@@ -657,9 +683,9 @@ class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
         
         # X and Y plot 
         ##############
-        R = f['R']
-        X = R[:, 1]
-        Y = R[:, 0]
+        R = f[config_default['input']['R']]
+        X = R[:, 0]
+        Y = R[:, 1]
         title = 'realspace x (red) and y (green) sample positions in pixel units'
         position_plotsW = pg.PlotWidget(bottom='frame number', left='position', title = title)
         position_plotsW.plot(X, pen=(255, 150, 150))
@@ -670,11 +696,17 @@ class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
 
         # frame plot
         ############
+        self.whitefield  = f[config_default['input']['whitefield']][()]
+        self.whitefield[self.whitefield==0] = 1.
+        self.whitefield  = self.whitefield.astype(np.float) / float(f[config_default['input']['data']].shape[0])
+
+        self.mkframe = lambda i, f : f[config_default['input']['data']][i] / self.whitefield
+        
         frame_plt = pg.PlotItem(title = 'Frame View')
         imageView = pg.ImageView(view = frame_plt)
         imageView.ui.menuBtn.hide()
         imageView.ui.roiBtn.hide()
-        imageView.setImage(f['data'][0].T.astype(np.float))
+        imageView.setImage(self.mkframe(0, f).T.astype(np.float))
         #imageView.show()
 
         # scatter plot
@@ -694,7 +726,7 @@ class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
             self.scatter_plot.replot(i)
 
             f = h5py.File(self.filename, 'r')
-            imageView.setImage( f['data'][i].T.astype(np.float), autoRange = False, autoLevels = False, autoHistogramRange = False)
+            imageView.setImage( self.mkframe(i, f).T.astype(np.float), autoRange = False, autoLevels = False, autoHistogramRange = False)
             f.close()
             
         vline.sigPositionChanged.connect(replot_frame)
@@ -721,17 +753,17 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         
         # Now we can add widgets to the layout
         f = h5py.File(self.filename, 'r')
-        
+
         # Get the X and Y coords
         ########################
-        R = f['R']
-        X = R[:, 1]
-        Y = R[:, 0]
+        R = f[config_default['input']['R']]
+        X = R[:, 0]
+        Y = R[:, 1]
         self.X = X
         self.Y = Y
         
         self.frames = np.zeros((len(X),), dtype=bool)
-        self.frames[f['good_frames']] = True
+        self.frames[f[config_default['output']]['good_frames'][()]] = True
         
         # scatter plot
         ##############
@@ -795,9 +827,10 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
 
     def write_good_frames(self):
         f = h5py.File(self.filename)
-        if 'good_frames' in f :
-            del f['good_frames']
-        f['good_frames'] = np.where(self.frames)[0]
+        key = config_default['output'] + '/good_frames'
+        if key in f :
+            del f[key]
+        f[key] = np.where(self.frames)[0]
         f.close()
 
     def update_selected_points(self):

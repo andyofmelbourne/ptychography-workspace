@@ -27,8 +27,12 @@ import PyQt4.QtCore
 import signal
 import copy 
 
+import ConfigParser
+
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
+
+from Ptychography import utils
 
 # set the config defaults 
 config_default = {}
@@ -38,6 +42,359 @@ config_default['input']['R']    = '/entry_1/sample_3/geometry/translation'
 config_default['input']['whitefield'] = '/process_2/powder'
 
 config_default['output'] = 'process_3'
+
+def load_config(filename, name = 'basic_stitch.ini'):
+    # if config is non then read the default from the *.pty dir
+    config = os.path.join(os.path.split(filename)[0], name)
+    if not os.path.exists(config):
+        config = os.path.join(root, 'process')
+        config = os.path.join(config, name)
+    
+    # check that args.config exists
+    if not os.path.exists(config):
+        raise NameError('config file does not exist: ' + config)
+    
+    # process config file
+    conf = ConfigParser.ConfigParser()
+    conf.read(config)
+    
+    params = utils.parse_parameters(conf)
+    return params
+
+class Show_h5_list_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, filename, names = None):
+        super(Show_h5_list_widget, self).__init__()
+
+        self.filename = filename
+        self.names    = names
+        
+        # add the names to Qlist thing
+        self.listWidget = PyQt4.QtGui.QListWidget(self)
+        #self.listWidget.setMinimumWidth(self.listWidget.sizeHintForColumn(0))
+        #self.listWidget.setMinimumHeight(500)
+        
+        # get the list of groups and items
+        self.dataset_names = [] 
+        self.dataset_items = [] 
+        
+        f = h5py.File(filename, 'r')
+        f.visititems(self.add_dataset_name)
+        f.close()
+
+        self.initUI()
+    
+    def initUI(self):
+        # set the layout
+        layout = PyQt4.QtGui.QVBoxLayout()
+        layout.addWidget(self.listWidget)
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+
+    def add_dataset_name(self, name, obj):
+        names = self.names
+        if isinstance(obj, h5py.Dataset):
+            if ((names is None) or (names is not None and name in names)) \
+                    and name not in self.dataset_names:
+                self.dataset_names.append(name)
+                self.dataset_items.append(PyQt4.QtGui.QListWidgetItem(self.listWidget))
+                self.dataset_items[-1].setText(name)
+    
+    def update(self):
+        f = h5py.File(self.filename, 'r')
+        f.visititems(self.add_dataset_name)
+        f.close()
+
+
+class Show_nd_data_widget(PyQt4.QtGui.QWidget):
+    def __init__(self):
+        super(Show_nd_data_widget, self).__init__()
+
+        self.plotW  = None
+        self.plotW2 = None
+        self.layout = None
+        self.name   = None
+        self.initUI()
+    
+    def initUI(self):
+        # set the layout
+        self.layout = PyQt4.QtGui.QVBoxLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(self.layout)
+    
+    def show(self, filename, name, refresh=False):
+        # make plot
+        f = h5py.File(filename, 'r')
+        shape = f[name].shape
+
+        if len(shape) == 1 :
+            if refresh :
+                self.plotW.setData(f[name][()])
+            else :
+                self.plotW = pg.PlotWidget(title = name)
+                self.plotW.plot(f[name][()], pen=(255, 150, 150))
+        
+        elif len(shape) == 2 and shape[1] < 4 :
+            pens = [(255, 150, 150), (150, 255, 150), (150, 150, 255)]
+            if refresh :
+                self.plotW.clear()
+                for i in range(shape[1]):
+                    self.plotW.setData(f[name][:, i], pen=pens[i])
+            else :
+                self.plotW = pg.PlotWidget(title = name + ' [0, 1, 2] are [r, g, b]')
+                for i in range(shape[1]):
+                    self.plotW.plot(f[name][:, i], pen=pens[i])
+
+        elif len(shape) == 2 :
+            if refresh :
+                self.plotW.setImage(f[name][()].T, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            else :
+                frame_plt = pg.PlotItem(title = name)
+                self.plotW = pg.ImageView(view = frame_plt)
+                self.plotW.ui.menuBtn.hide()
+                self.plotW.ui.roiBtn.hide()
+                self.plotW.setImage(f[name][()].T)
+
+        elif len(shape) == 3 :
+            if refresh :
+                replot_frame()
+            else :
+                # show the first frame
+                frame_plt = pg.PlotItem(title = name)
+                self.plotW = pg.ImageView(view = frame_plt)
+                self.plotW.ui.menuBtn.hide()
+                self.plotW.ui.roiBtn.hide()
+                self.plotW.setImage(f[name][0].T)
+
+                # add a little 1d plot with a vline
+                self.plotW2 = pg.PlotWidget(title = 'index')
+                self.plotW2.plot(np.arange(f[name].shape[0]), pen=(255, 150, 150))
+                vline = self.plotW2.addLine(x = 0, movable=True, bounds = [0, f[name].shape[0]-1])
+                self.plotW2.setMaximumSize(10000000, 100)
+                
+                def replot_frame():
+                    i = int(vline.value())
+                    f = h5py.File(filename, 'r')
+                    self.plotW.setImage( f[name][i].T, autoRange = False, autoLevels = False, autoHistogramRange = False)
+                    f.close()
+                    
+                vline.sigPositionChanged.connect(replot_frame)
+
+        f.close()
+         
+        # add to layout
+        self.layout.addWidget(self.plotW, stretch = 1)
+        
+        if self.plotW2 is not None :
+            self.layout.addWidget(self.plotW2, stretch = 0)
+        
+        # remember the last file and dataset for updating
+        self.name     = name
+        self.filename = filename
+    
+    def close(self):
+        # remove from layout
+        if self.layout is not None :
+            if self.plotW is not None :
+                self.layout.removeWidget(self.plotW)
+            
+            if self.plotW2 is not None :
+                self.layout.removeWidget(self.plotW2)
+        
+        # close plot widget
+        if self.plotW is not None :
+            self.plotW.close()
+            self.plotW = None
+        
+        if self.plotW2 is not None :
+            self.plotW2.close()
+            self.plotW2 = None
+    
+    def update(self):
+        # update the current plot
+        self.show(self.filename, self.name, True)
+
+
+class View_h5_data_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, filename, names = None):
+        super(View_h5_data_widget, self).__init__()
+        
+        self.filename = filename
+        self.names = names
+            
+        self.show_list_widget = Show_h5_list_widget(filename, names = names)
+        self.plot1dWidget = Show_nd_data_widget()
+        
+        # send a signal when an item is clicked
+        self.show_list_widget.listWidget.itemClicked.connect(self.dataset_clicked)
+
+        self.initUI()
+
+    def initUI(self):
+        layout = PyQt4.QtGui.QHBoxLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+
+        # add the h5 datasets list
+        layout.addWidget(self.show_list_widget)
+        
+        # add the 1d viewer 
+        layout.addWidget(self.plot1dWidget, stretch=1)
+        
+
+    def dataset_clicked(self, item):
+        name = str(item.text())
+        
+        # close the last image
+        self.plot1dWidget.close()
+        
+        # load the new one
+        self.plot1dWidget.show(self.filename, name)
+        
+    def update(self):
+        self.show_list_widget.update()
+        self.plot1dWidget.update()
+
+class Test_run_command_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, h5_filename):
+        super(Test_run_command_widget, self).__init__()
+
+        self.h5_filename = h5_filename
+        
+        # set the python filename
+        pyname = 'template_command.py'
+        
+        self.py = os.path.join(root, 'process/' + pyname)
+        
+        # read the config file
+        self.config_dict  = load_config(h5_filename, name = pyname[:-2] + 'ini')
+        self.output_dir   = os.path.split(h5_filename)[0]
+        self.config_out   = os.path.join(self.output_dir, pyname[:-2] + 'ini')
+        self.config_group = 'template_command'
+        
+        self.cmd = 'python ' + self.py + ' ' + h5_filename + ' -c ' + self.config_out
+        
+        self.run_com_Widget = Run_command_template_widget(\
+                             h5_filename, self.config_dict, self.config_out, \
+                             self.config_group, self.cmd, h5_datas = ['image', 'error'])
+        self.initUI()
+    
+    def initUI(self):
+        # Make a grid layout
+        layout = PyQt4.QtGui.QVBoxLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+
+        layout.addWidget(self.run_com_Widget)
+
+
+        
+class Run_command_template_widget(PyQt4.QtGui.QWidget):
+    """
+    I take a h5 filename and a config dictionary. You should
+    subclass me. 
+    
+    GUI layout:
+
+    Widget box:         output tabs
+    Run command button  frame / error plots ...
+    ...
+
+    Config editor:
+    output_group
+    number of frames
+    ...
+    
+    Status:
+    Command:
+    """
+    def __init__(self, h5_filename, config_dict, config_out, config_group \
+                 ,cmd, h5_datas = ['image', 'error']):
+        super(Run_command_template_widget, self).__init__()
+        
+        self.h5_filename = h5_filename
+        self.config_dict = config_dict
+        self.config_out  = config_out
+        self.config_group = config_group
+        self.h5_datas    = h5_datas
+        self.cmd         = cmd
+        
+        self.h5_out       = self.config_dict[config_group]['output_file']
+        self.h5_out_group = self.config_dict[config_group]['output_group']
+        if self.h5_out is None :
+            self.h5_out = h5_filename
+        
+        self.initUI()
+
+    def initUI(self):
+        """
+        """
+        # Make a grid layout
+        layout = PyQt4.QtGui.QVBoxLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+
+        # view data widget
+        ##################
+        # make a list of the output to look out for 
+        out_names = [self.h5_out_group + '/' + d for d in self.h5_datas]
+        self.view_output_widget = View_h5_data_widget(self.h5_out, names = out_names)
+        
+        # config widget
+        ###############
+        self.config_widget = Write_config_file_widget(self.config_dict, self.config_out)
+
+        # run command widget
+        ####################
+        self.run_command_widget = Run_and_log_command()
+        self.run_command_widget.finished_signal.connect(self.finished)
+        
+        # run command button
+        ####################
+        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button.clicked.connect(self.run_button_clicked)
+        
+        # A do something button
+        ##################
+        self.do_button = PyQt4.QtGui.QPushButton('do something', self)
+        self.do_button.clicked.connect(self.do_button_clicked)
+        
+        # add a spacer for the labels and such
+        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        
+        # set the layout
+        ################
+        vlay = PyQt4.QtGui.QVBoxLayout() 
+        vlay.addWidget(self.run_button)
+        vlay.addWidget(self.do_button)
+        vlay.addWidget(self.config_widget)
+        vlay.addStretch(1)
+        
+        hlay = PyQt4.QtGui.QHBoxLayout() 
+        hlay.addLayout(vlay, stretch = 0)
+        hlay.addWidget(self.view_output_widget, stretch = 1)
+
+        layout.addLayout(hlay)
+        layout.addWidget(self.run_command_widget)
+
+    def run_button_clicked(self):
+        # write the config file 
+        #######################
+        self.config_widget.write_file()
+          
+        # Run the command 
+        #################
+        self.run_command_widget.run_cmd(self.cmd)
+    
+    def finished(self):
+        self.view_output_widget.update()
+    
+    def do_button_clicked(self):
+        print('you pressed the do button: I do nothing')
 
 class Phase_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):
@@ -433,6 +790,7 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
                     out_str = out_str + ' = '
                     out_str = out_str + str(self.labels_lineedits[group][key]['lineedit'].text())
                     f.write( out_str + '\n')
+
 
 class Show_stitch_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):

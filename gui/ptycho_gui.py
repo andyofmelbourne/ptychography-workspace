@@ -30,6 +30,9 @@ from widgets import Mask_maker_widget
 from widgets import Show_probe_widget
 from widgets import Phase_widget
 from widgets import config_default
+from widgets import Show_h5_list_widget
+from widgets import View_h5_data_widget
+from widgets import Test_run_command_widget
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -75,11 +78,24 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.setMovable(True)
         #self.setTabsClosable(True)
 
+        """
         # Show frames tab
         #################
         self.tabs.append( Show_frames_selection_widget(filename) )
         self.addTab(self.tabs[-1], "show frames")
+        """
 
+        # Show h5 list tab
+        #################
+        self.tabs.append( View_h5_data_widget(filename) )
+        self.addTab(self.tabs[-1], "show h5 dataset")
+
+        # Show test
+        #################
+        self.tabs.append( Test_run_command_widget(filename) ) 
+        self.addTab(self.tabs[-1], "testing")
+        #self.tabs[-1].initUI()
+        
         """
         # Show stitch tab
         #################

@@ -64,6 +64,7 @@ sys.path.append(os.path.join(root, 'process'))
 
 import Ptychography.ptychography.era as era
 from Ptychography import utils
+import utils as utils2
 
 from mpi4py import MPI
 
@@ -179,6 +180,7 @@ def OP_sup(I, R, whitefield, O, mask, iters=4):
     
     #P = whitefield**2
     P = whitefield * mask
+    I *= mask
     
     for i in range(iters):
         O0 = O.copy()
@@ -226,34 +228,87 @@ if __name__ == '__main__':
     args, params = parse_cmdline_args()
     f = h5py.File(args.filename)
     
-    # r_i = R_i * M / pixel_size 
-    # M = z1 + z2 / z1
-    # z1 + z2 = detector distance
-    # M = detector distance / sample_defocus
-    ############################
+    ################################
+    # Get the inputs
+    # frames, df, R, O, W, ROI, mask
+    ################################
+    group = params['stitch']['h5_group']
     
-    # get the frames to process
-    good_frames = f['good_frames'][()]
-
-    # get the original shift coordinates
-    R = f['metadata/R_meters'][()].astype(np.float)
-    print 'R shape:', R.shape
-    
-    # get the Magnification
-    M = Mss = f['/metadata/detector_distance'].value / params['stitch']['defocus']
-
-    if params['stitch']['defocus_fs'] is not None :
-        Mfs = f['/metadata/detector_distance'].value / params['stitch']['defocus_fs']
+    # ROI
+    # ------------------
+    if params['stitch']['roi'] is not None :
+        ROI = params['stitch']['roi']
     else :
-        Mfs = Mss
+        ROI = [0, f['entry_1/data_1/data'].shape[0], 0, f['entry_1/data_1/data'].shape[1]]
     
-    # scale R into detector pixels
-    R[:, 0] *= Mss / f['/metadata/ss_pixel_size'].value
-    R[:, 1] *= Mfs / f['/metadata/fs_pixel_size'].value
-
+    # frames
+    # ------------------
+    # get the frames to process
+    if 'good_frames' in f[group] :
+        good_frames = list(f[group]['good_frames'][()])
+    else :
+        good_frames = range(f['entry_1/data_1/data'].shape[0])
+    
+    data = np.array([f['/entry_1/data_1/data'][fi][ROI[0]:ROI[1], ROI[2]:ROI[3]] for fi in good_frames])
+    
+    # df
+    # ------------------
+    # get the sample to detector distance
+    if params['stitch']['defocus'] is not None :
+        df = params['stitch']['defocus']
+    else :
+        df = f['/entry_1/sample_3/geometry/translation'][0, 2]
+    
+    # R
+    # ------------------
+    # get the pixel shift coordinates along ss and fs
+    R, du = utils2.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['stitch']['defocus'], offset_to_zero=True)
+    
+    # allow for astigmatism
+    if params['stitch']['defocus_fs'] is not None :
+        R[:, 1] *= df / params['stitch']['defocus_fs']
+    
     R = np.rint(R).astype(np.int)
-    R[:, 0] *= -1
-    O, P = OP_sup(f['data'][list(good_frames)].astype(np.float), R[list(good_frames)], f['whitefield'][()], None, f['mask'][()], iters=params['stitch']['iters'])
+    
+    # O
+    # ------------------
+    # get the sample
+    if params['stitch']['sample'] is not None :
+        O = f[params['stitch']['sample']][()]
+    else :
+        O = None
+    
+    # W
+    # ------------------
+    # get the whitefield
+    if params['stitch']['whitefield'] is not None :
+        W = f[params['stitch']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
+    else :
+        W = np.mean(data, axis=0)
+
+    # mask
+    # ------------------
+    # mask hot / dead pixels
+    if params['stitch']['mask'] is None :
+        bit_mask = f['entry_1/instrument_1/detector_1/mask'].value
+        # hot (4) and dead (8) pixels
+        mask     = ~np.bitwise_and(bit_mask, 4 + 8).astype(np.bool) 
+    else :
+        mask = f[params['stitch']['mask']].value
+    mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
+
+    #####################
+    # Refine O and W
+    #####################
+    O, P = OP_sup(data.astype(np.float), R, W, O, mask, iters=params['stitch']['iters'])
+
+    if params['stitch']['normalise'] :
+        a = np.mean(np.abs(O))
+        P *= a
+        O /= a
+
+    W = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    W[ROI[0]:ROI[1], ROI[2]:ROI[3]] = P[:].real
     
     # write the result 
     ##################
@@ -264,26 +319,29 @@ if __name__ == '__main__':
         g = f
         outputdir = os.path.split(args.filename)[0]
     
-    key = params['stitch']['h5_group']+'/O'
+    key = params['stitch']['h5_group']+'/O_stitch'
     if key in g :
         del g[key]
     g[key] = O.astype(np.complex128)
     
+    key = params['stitch']['h5_group']+'/whitefield_stitch'
+    if key in g :
+        del g[key]
+    g[key] = W
+    
+    """
     key = params['stitch']['h5_group']+'/R'
     if key in g :
         del g[key]
     print 'R shape:', R.shape
     g[key] = R
-    
-    key = params['stitch']['h5_group']+'/whitefield'
-    if key in g :
-        del g[key]
-    g[key] = P.real
-    
+
     key = params['stitch']['h5_group']+'/defocus'
     if key in g :
         del g[key]
     g[key] = params['stitch']['defocus']
+    """
+    
     g.close()
     
     # copy the config file

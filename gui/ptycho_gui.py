@@ -78,25 +78,24 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.setMovable(True)
         #self.setTabsClosable(True)
 
-        """
         # Show frames tab
         #################
         self.tabs.append( Show_frames_selection_widget(filename) )
         self.addTab(self.tabs[-1], "show frames")
-        """
 
         # Show h5 list tab
         #################
         self.tabs.append( View_h5_data_widget(filename) )
         self.addTab(self.tabs[-1], "show h5 dataset")
 
+        """
         # Show test
         #################
         self.tabs.append( Test_run_command_widget(filename) ) 
         self.addTab(self.tabs[-1], "testing")
         #self.tabs[-1].initUI()
-        
         """
+        
         # Show stitch tab
         #################
         # load the default config file
@@ -106,9 +105,10 @@ class Gui(PyQt4.QtGui.QTabWidget):
         
         # mask Maker tab
         ################
-        self.tabs.append( Mask_maker_widget(filename, 'mask', filename, 'mask') )
+        self.tabs.append( Mask_maker_widget(filename, config_default['output'] + '/mask', filename, config_default['output'] + '/mask') )
         self.addTab(self.tabs[-1], "mask maker")
         
+        """
         # probe maker tab
         #################
         # show real-space / detector-space probe

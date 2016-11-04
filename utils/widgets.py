@@ -73,6 +73,11 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
         #self.listWidget.setMinimumWidth(self.listWidget.sizeHintForColumn(0))
         #self.listWidget.setMinimumHeight(500)
         
+        # update list button
+        ####################
+        self.update_button = PyQt4.QtGui.QPushButton('update', self)
+        self.update_button.clicked.connect(self.update)
+
         # get the list of groups and items
         self.dataset_names = [] 
         self.dataset_items = [] 
@@ -87,6 +92,7 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
         # set the layout
         layout = PyQt4.QtGui.QVBoxLayout()
         layout.addWidget(self.listWidget)
+        layout.addWidget(self.update_button)
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -148,13 +154,13 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
 
         elif len(shape) == 2 :
             if refresh :
-                self.plotW.setImage(f[name][()].T, autoRange = False, autoLevels = False, autoHistogramRange = False)
+                self.plotW.setImage(f[name][()].real.T, autoRange = False, autoLevels = False, autoHistogramRange = False)
             else :
                 frame_plt = pg.PlotItem(title = name)
                 self.plotW = pg.ImageView(view = frame_plt)
                 self.plotW.ui.menuBtn.hide()
                 self.plotW.ui.roiBtn.hide()
-                self.plotW.setImage(f[name][()].T)
+                self.plotW.setImage(f[name][()].real.T)
 
         elif len(shape) == 3 :
             if refresh :
@@ -775,7 +781,15 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
                 layout.addWidget(self.labels_lineedits[group][key]['label'], i, 0, 1, 1)
                 
                 self.labels_lineedits[group][key]['lineedit'] = PyQt4.QtGui.QLineEdit(self)
-                self.labels_lineedits[group][key]['lineedit'].setText(str(config_dict[group][key]))
+                # special case when config_dict[group][key] is a list
+                if type(config_dict[group][key]) is list or type(config_dict[group][key]) is np.ndarray :
+                    setT = ''
+                    for i in range(len(config_dict[group][key])-1):
+                        setT += str(config_dict[group][key][i]) + ','
+                    setT += str(config_dict[group][key][-1])
+                else :
+                    setT = str(config_dict[group][key])
+                self.labels_lineedits[group][key]['lineedit'].setText(setT)
                 self.labels_lineedits[group][key]['lineedit'].editingFinished.connect(self.write_file)
                 layout.addWidget(self.labels_lineedits[group][key]['lineedit'], i, 1, 1, 1)
                 i += 1
@@ -831,8 +845,8 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView = pg.ImageView(view = frame_plt)
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
-        self.stitch_path = config_dict['stitch']['h5_group']+'/O'
-        self.R_path = config_dict['stitch']['h5_group']+'/R'
+        self.stitch_path = config_dict['stitch']['h5_group']+'/O_stitch'
+        #self.R_path = config_dict['stitch']['h5_group']+'/R'
         self.im_init = False
         if self.stitch_path in self.f :
             print(self.f[self.stitch_path].shape)
@@ -857,18 +871,18 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         
         # set sample and R
         ##################
-        self.set_button = PyQt4.QtGui.QPushButton('set: O, R and defocus', self)
-        self.set_button.clicked.connect(self.set_button_clicked)
+        #self.set_button = PyQt4.QtGui.QPushButton('set: O, R and defocus', self)
+        #self.set_button.clicked.connect(self.set_button_clicked)
         
         # refine positions command widget
         #################################
-        self.run_ref_widget = Run_and_log_command()
-        self.run_ref_widget.finished_signal.connect(self.ref_positions_done)
+        #self.run_ref_widget = Run_and_log_command()
+        #self.run_ref_widget.finished_signal.connect(self.ref_positions_done)
         
         # refine positions button
         #################################
-        self.ref_button = PyQt4.QtGui.QPushButton('refine positions', self)
-        self.ref_button.clicked.connect(self.ref_button_clicked)
+        #self.ref_button = PyQt4.QtGui.QPushButton('refine positions', self)
+        #self.ref_button.clicked.connect(self.ref_button_clicked)
         
         # add a spacer for the labels and such
         verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
@@ -878,11 +892,11 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         layout.addWidget(self.imageView,           0, 1, 5, 1)
         layout.addWidget(self.config_widget,       0, 0, 1, 1)
         layout.addWidget(self.run_button,          1, 0, 1, 1)
-        layout.addWidget(self.ref_button,          2, 0, 1, 1)
-        layout.addWidget(self.set_button,          3, 0, 1, 1)
+        #layout.addWidget(self.ref_button,          2, 0, 1, 1)
+        #layout.addWidget(self.set_button,          3, 0, 1, 1)
         layout.addItem(verticalSpacer,             4, 0, 1, 1)
         layout.addWidget(self.run_command_widget,  5, 0, 1, 2)
-        layout.addWidget(self.run_ref_widget,      6, 0, 1, 2)
+        #layout.addWidget(self.run_ref_widget,      6, 0, 1, 2)
         layout.setColumnStretch(1, 1)
         layout.setColumnMinimumWidth(0, 250)
         self.layout = layout
@@ -908,6 +922,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
     
     def finished(self):
         self.f = h5py.File(self.filename, 'r')
+        print(self.stitch_path)
         t = self.f[self.stitch_path].value.T.real
         if self.im_init :
             self.imageView.setImage(t, autoRange = False, autoLevels = False, autoHistogramRange = False)
@@ -918,22 +933,25 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.f.close()
     
     def set_button_clicked(self):
+        pass
+        """
         f = h5py.File(self.filename)
         O = f[self.stitch_path].value
-        R = f[self.R_path].value
-        print('writing O and R to file')
+        #R = f[self.R_path].value
+        print('writing O to file')
         if 'O' in f :
             del f['O']
         f['O'] = O
-        if 'R' in f :
-            del f['R']
-        f['R'] = R
+        #if 'R' in f :
+        #    del f['R']
+        #f['R'] = R
         
         if 'metadata/defocus' in f :
             del f['metadata/defocus']
         f['metadata/defocus'] = self.config_widget.output_config['stitch']['defocus']
         print('Done')
         f.close()
+        """
 
 class Show_frames_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config = config_default):
@@ -1184,7 +1202,7 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         f.close()
 
     def write_good_frames(self):
-        f = h5py.File(self.filename)
+        f = h5py.File(self.filename, 'a')
         key = config_default['output'] + '/good_frames'
         if key in f :
             del f[key]
@@ -1319,9 +1337,12 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         f = h5py.File(fnam, 'r')
         
         #cspad = f['whitefield'][()]
-        cspad = np.sum(f['data'][:10], axis=0)
+        cspad = np.sum(f['/entry_1/data_1/data'][:10], axis=0)
 
-        mask = f[mask][()]
+        if mask not in f :
+            mask = np.ones_like(cspad).astype(np.bool)
+        else :
+            mask = f[mask][()]
         f.close()
         
         # this is not in fact a cspad image
@@ -1521,6 +1542,19 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.toggle_group.addButton(self.unmask_checkbox)   
         self.toggle_group.setExclusive(True)
         
+        # toggle / mask / unmask checkboxes
+        #################################
+        self.toggle_checkbox   = PyQt4.QtGui.QCheckBox('toggle')
+        self.mask_checkbox     = PyQt4.QtGui.QCheckBox('mask')
+        self.unmask_checkbox   = PyQt4.QtGui.QCheckBox('unmask')
+        self.toggle_checkbox.setChecked(True)   
+        
+        self.toggle_group      = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
+        self.toggle_group.addButton(self.toggle_checkbox)   
+        self.toggle_group.addButton(self.mask_checkbox)   
+        self.toggle_group.addButton(self.unmask_checkbox)   
+        self.toggle_group.setExclusive(True)
+
         # mouse hover ij value label
         #################################
         ij_label = PyQt4.QtGui.QLabel()

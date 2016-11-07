@@ -183,7 +183,7 @@ def parse_cmdline_args():
     
     # if config is non then read the default from the *.pty dir
     if args.config is None :
-        args.config = os.path.join(os.path.split(args.filename)[0], 'basic_stitch.ini')
+        args.config = os.path.join(os.path.split(args.filename)[0], 'gpu_stitch.ini')
         if not os.path.exists(args.config):
             args.config = '../process/gpu_stitch.ini'
     
@@ -207,6 +207,7 @@ if __name__ == '__main__':
     ################################
     # Get the inputs
     # frames, df, R, O, W, ROI, mask
+    # Zernike polynomials
     ################################
     group = params['gpu_stitch']['h5_group']
     
@@ -261,7 +262,7 @@ if __name__ == '__main__':
         print('du:', du)
         dx = params['gpu_stitch']['o_dx'] / du
     else :
-        dx = 1.
+        dx = [1., 1.]
     print('dx:', dx)
     
     # W
@@ -283,16 +284,30 @@ if __name__ == '__main__':
         mask = f[params['gpu_stitch']['mask']].value
     mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
 
+    # Zernike polynomials
+    # -------------------
+    # get the list of zernike polynomial coefficients 
+    # if there are any
+    if params['gpu_stitch']['zernike'] is not None :
+        Z = f[params['gpu_stitch']['zernike']][()].astype(np.float)
+    else :
+        Z = np.zeros( (params['gpu_stitch']['orders'],), dtype=np.float)
+    
+    fit_grads = params['gpu_stitch']['fit_grads']
+    orders    = params['gpu_stitch']['orders']
+    
     #####################
     # Refine O and W
     #####################
-    O, P = OP_sup(data.astype(np.float), R, W, O, mask, O_dx = dx, iters=params['gpu_stitch']['iters'])
-
+    #O, P = OP_sup(data.astype(np.float), R, W, O, mask, O_dx = dx, iters=params['gpu_stitch']['iters'])
+    O, P, Z_out, errors = fit_Zernike_grads(data.astype(np.float), R, W, O, mask, Z, \
+                          fit_grads=fit_grads, orders=orders, O_dx = dx, iters=params['gpu_stitch']['iters'])
+    
     if params['gpu_stitch']['normalise'] :
         a = np.mean(np.abs(O))
         P *= a
         O /= a
-
+    
     W = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
     W[ROI[0]:ROI[1], ROI[2]:ROI[3]] = P[:].real
     

@@ -2,6 +2,32 @@ import utils
 from utils.utils import *
 import numpy as np
 
+def make_Zernike_grads(mask, roi = None, max_order = 100, return_grids = False, return_basis = False, yx_bounds = None, test = False):
+    if return_grids :
+        basis, basis_grid, y, x = make_Zernike_basis(mask, roi, max_order, return_grids, yx_bounds, test)
+    else :
+        basis = make_Zernike_basis(mask, roi, max_order, return_grids, yx_bounds, test)
+
+    # calculate the x and y gradients
+    from numpy.polynomial import polynomial as P
+    
+    # just a list of [(grad_ss, grad_fs), ...] where the grads are in a polynomial basis
+    grads = [ (P.polyder(b, axis=0), P.polyder(b, axis=1)) for b in basis ]
+
+    if return_grids :
+        # just a list of [(grad_ss, grad_fs), ...] where the grads are evaluated on a y, x grid
+        grad_grids = [(P.polygrid2d(y, x, g[0]), P.polygrid2d(y, x, g[1])) for g in grads]
+
+        if return_basis :
+            return grads, grad_grids, basis, basis_grid
+        else :
+            return grads, grad_grids
+    else :
+        if return_basis :
+            return grads, basis
+        else :
+            return grads
+
 def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, yx_bounds = None, test = False):
     """
     Make Zernike basis functions, such that:
@@ -26,6 +52,9 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
     if roi is None :
         roi = [0, shape[0]-1, 0, shape[1]-1]
     
+    sub_mask  = mask[roi[0]:roi[1]+1, roi[2]:roi[3]+1] 
+    sub_shape = sub_mask.shape
+    
     if yx_bounds is None :
         if (roi[1] - roi[0]) > (roi[3] - roi[2]) :
             m = float(roi[1] - roi[0]) / float(roi[3] - roi[2])
@@ -33,16 +62,10 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
         else :
             m = float(roi[3] - roi[2]) / float(roi[1] - roi[0])
             yx_bounds = [-1., 1., -m, m]
-
-    y  = np.arange(shape[0]).astype(np.float)
-    y -= y[roi[0]]
-    y  = 2 * yx_bounds[1] * y / y[roi[1]]
-    y -= yx_bounds[1]
-     
-    x  = np.arange(shape[1]).astype(np.float)
-    x -= x[roi[2]]
-    x  = 2 * yx_bounds[3] * x / x[roi[3]]
-    x -= yx_bounds[3]
+    
+    dom = yx_bounds
+    y = ((dom[1]-dom[0])*np.arange(shape[0]) + dom[0]*roi[1]-dom[1]*roi[0])/(roi[1]-roi[0])
+    x = ((dom[3]-dom[2])*np.arange(shape[1]) + dom[2]*roi[3]-dom[3]*roi[2])/(roi[3]-roi[2])
 
     # define the area element
     # -----------------------
@@ -60,9 +83,9 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
     # -------------------------
     from numpy.polynomial import polynomial as P
     def product(a, b):
-        c = P.polygrid2d(y, x, a)
-        d = P.polygrid2d(y, x, b)
-        v = np.sum(mask * c * d)
+        c = P.polygrid2d(y[roi[0]:roi[1]+1], x[roi[2]:roi[3]+1], a)
+        d = P.polygrid2d(y[roi[0]:roi[1]+1], x[roi[2]:roi[3]+1], b)
+        v = np.sum(sub_mask * c * d)
         return v
     
     basis = Gram_Schmit_orthonormalisation(Z_polynomials, product)
@@ -86,23 +109,29 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
     else :
         return basis
 
-def fit_Zernike_coefficients(phase, mask = 1, roi = None, max_order = 100):
+def fit_Zernike_coefficients(phase, mask = 1, roi = None, max_order = 100, yx_bounds=None):
     """
     Find cof such that:
         \sum_n cof_n * Z_n[i, j] = phase[i, j]
-
+    
     The Z_n are formed by orthonormalising the Zernike polynomials on the mask.
     The x, y coordinates are scaled and shifted inside the roi such that the 
     smallest dimension is scaled from -1 to 1 and the other in proportion.
     """
+    if roi is None :
+        roi = [0, shape[0]-1, 0, shape[1]-1]
+
     if mask is 1 :
         mask = np.ones_like(phase, dtype=np.bool)
     
+    sub_mask = np.zeros_like(mask)
+    sub_mask[roi[0]:roi[1]+1, roi[2]:roi[3]+1] = mask[roi[0]:roi[1]+1, roi[2]:roi[3]+1]
+
     basis, basis_grid, y, x = make_Zernike_basis(mask, roi = roi, \
                                            max_order = max_order, return_grids = True, \
-                                           yx_bounds = [-1., 1., -1., 1.])
+                                           yx_bounds = yx_bounds)
     
-    Zernike_coefficients = [np.sum(b * mask * phase) for b in basis_grid]
+    Zernike_coefficients = [np.sum(b * sub_mask * phase) for b in basis_grid]
     
     return Zernike_coefficients
 
@@ -114,22 +143,39 @@ if __name__ == '__main__':
     # ----------------------------------------------------------
     print 'fiting Zernike coefficients to a phase profile for arbitrary'
     print 'aperture dimensions and with masked pixels...'
-    shape = (128, 256)
-    dom   = [-1, 1, -1, 1]
+    shape = (256, 256)
+    #roi   = [64, 192, 0, 256]
+    roi   = [0, 255, 0, 255]
+    
+    # stretched domain
+    dom_st   = [-1., 1., -1., 1.]
+    
+    # circle in rectangle domain
+    dom_sm   = [-1., 1., -2., 2.]
+    
+    # rectangle in circle domain
+    rat = float(roi[1]-roi[0])/float(roi[3]-roi[2])
+    x   = np.sqrt(1. / (1. + rat**2))
+    y   = rat * x
+    dom_la = [-y, y, -x, x]
+
+    dom = dom_la
+    
     #mask  = np.ones(shape, dtype=np.bool)
     mask  = np.random.random( shape ) > 0.2
 
     # make the phase with the same basis functions as those that are
     # fit, in order to compare coefficients
     Zernike_coefficients = np.random.random((36,))
-    basis, basis_grid, y, x = make_Zernike_basis(mask, roi = None, \
+    basis, basis_grid, y, x = make_Zernike_basis(mask, roi = roi, \
                                            max_order = len(Zernike_coefficients), return_grids = True, \
-                                           yx_bounds = [-1., 1., -1., 1.])
+                                           yx_bounds = dom)
     
     phase = np.sum([Z * b for Z, b in zip(Zernike_coefficients, basis_grid) ], axis=0)
     phase *= mask
     
-    fit_coef  = fit_Zernike_coefficients(phase, mask = mask, max_order = 40)
+    fit_coef  = fit_Zernike_coefficients(phase, mask = mask, max_order = 40, roi=roi, yx_bounds=dom)
+    
     phase_ret = np.sum([Z * b for Z, b in zip(fit_coef, basis_grid) ], axis=0)
     
     print 'Success?'
@@ -141,3 +187,4 @@ if __name__ == '__main__':
     # arbitrary aperture dimensions and with masked pixels
     # ----------------------------------------------------------
     #Bdy, Bdx, Bdy_grid, Bdx_grid = make_Zernike_grad(basis, y, x
+    grads, grad_grids = make_Zernike_grads(mask, roi = roi, max_order = 36, return_grids = True, yx_bounds = dom, test = False)

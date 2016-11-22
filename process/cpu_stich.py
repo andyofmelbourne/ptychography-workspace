@@ -25,30 +25,30 @@ from numpy.polynomial import legendre as L
 class Cpu_stitcher():
 
     def __init__(self, data, mask, W, R, O, X_ij): 
-	dtype     = np.float64
-	self.IW   = mask * data * W
+        dtype     = np.float64
+        self.IW   = mask * data * W
         self.Od   = np.zeros_like(data, dtype=dtype)
-	self.mask = mask
-	self.WW   = mask * W**2
-	self.W    = mask * W
-	self.R    = np.rint(R).astype(np.int)
-	
-	# add room for half a data frame
+        self.mask = mask
+        self.WW   = mask * W**2
+        self.W    = mask * W
+        self.R    = np.rint(R).astype(np.int)
+        
+        # add room for half a data frame
         self.R[:, 0] -= data.shape[1]//2
         self.R[:, 1] -= data.shape[2]//2
-	
-	if O is None :
-	    self.O  = O
-	else :
-	    self.O  = O
-	
+        
+        if O is None :
+            self.O  = O
+        else :
+            self.O  = O
+        
         # the regular pixel values
         self.i, self.j = np.indices(self.IW.shape[1 :])
 
-	if X_ij is not None :
-	    self.X_ij = np.rint(X_ij).astype(np.int)
-	else :
-	    self.X_ij = np.zeros_like([self.i, self.j])
+        if X_ij is not None :
+            self.X_ij = np.rint(X_ij).astype(np.int)
+        else :
+            self.X_ij = np.zeros_like([self.i, self.j])
          
         # make the object grid
         Oshape = (int(round(self.i.max() + np.max(np.abs(self.R[:, 0])) + data.shape[1]//2)), \
@@ -57,24 +57,24 @@ class Cpu_stitcher():
         if O is None :
             self.O = np.zeros(Oshape, dtype=dtype)
         else :
-	    self.O = O
+            self.O = O
 
-	self.WWmap = np.zeros_like(self.O)
+        self.WWmap = np.zeros_like(self.O)
     
     def forward_map(self, X_ij):
-	for k in range(self.IW.shape[0]):
-	    self.Od[k] =  self.O[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] 
-	return self.Od
+        for k in range(self.IW.shape[0]):
+            self.Od[k] =  self.O[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] 
+        return self.Od
     
     def inverse_map(self, X_ij):
-	self.O.fill(0)
-	self.WWmap.fill(0)
-	for k in range(self.IW.shape[0]):
-	    self.O[    self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.IW[k]
-	    self.WWmap[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.WW
-	self.O /= (self.WWmap + 1.0e-5)
+        self.O.fill(0)
+        self.WWmap.fill(0)
+        for k in range(self.IW.shape[0]):
+            self.O[    self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.IW[k]
+            self.WWmap[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.WW
+        self.O /= (self.WWmap + 1.0e-5)
         self.O[self.O==0] = 1.
-	return self.O
+        return self.O
     
     def calc_error(self, X_ij):
         self.O       = self.inverse_map(X_ij)
@@ -92,8 +92,8 @@ class Cpu_stitcher():
         i, j  = np.indices(shape[1:])
         i    -= self.IW.shape[1] * (pad - 1)//2 + 1
         j    -= self.IW.shape[2] * (pad - 1)//2 + 1
-	for k in range(self.IW.shape[0]):
-	    Os[k] =  self.O[i - self.R[k][0], j - self.R[k][1]] 
+        for k in range(self.IW.shape[0]):
+            Os[k] =  self.O[i - self.R[k][0], j - self.R[k][1]] 
 
         # return the slice objects such that Od[k] = Os[k][i, j]
         i, j = slice(data.shape[1]//2+1,3*data.shape[1]//2+1,1), slice(data.shape[2]//2+1,3*data.shape[2]//2+1,1)
@@ -424,7 +424,7 @@ if __name__ == '__main__':
     NCCs.append(np.zeros_like(X_ij[0]))
     
     pool = Pool(processes=self.IW.shape[0])
-    for ii in range(4):
+    for ii in range(20):
         print '\n\nloop :', ii
         
         print 'setting up... '
@@ -434,8 +434,8 @@ if __name__ == '__main__':
         # add a random offset between 0 --> steps-1
         #offset_i = np.random.randint(0, steps, forwards.shape[0])
         #offset_j = np.random.randint(0, steps, forwards.shape[0])
-        offset_i = np.arange(forwards.shape[0]) // steps
-        offset_j = np.arange(forwards.shape[0]) % steps
+        offset_i = 0 * np.arange(forwards.shape[0]) // steps
+        offset_j = 0 * np.arange(forwards.shape[0]) % steps
         
         print 'sending to workers '
         print forwards.shape, frames.shape, mask.shape, window, search_window, steps
@@ -445,27 +445,29 @@ if __name__ == '__main__':
                                offset_i, offset_j)
         
         #X_ij_new, NCC = feature_map_cython_wrap(args.next())
-        res  = pool.map(feature_map_cython_wrap, args)
+        #res  = pool.map(feature_map_cython_wrap, args)
+        #res  = [feature_map_wrap(arg) for arg in args]
         
-        X_ij_old = np.rint(X_ij).astype(np.int)
-        Ods_old =  [self.O[self.i + X_ij_old[0] - self.R[k][0], self.j + X_ij_old[1] - self.R[k][1]] for k in range(frames.shape[0])]
+        #X_ij_old = np.rint(X_ij).astype(np.int)
+        #Ods_old =  [self.O[self.i + X_ij_old[0] - self.R[k][0], self.j + X_ij_old[1] - self.R[k][1]] for k in range(frames.shape[0])]
 
-        X_ij_new = np.rint(res[10][0]).astype(np.int)
-        Ods_new =  [self.O[self.i + X_ij_new[0] - self.R[k][0], self.j + X_ij_new[1] - self.R[k][1]] for k in range(frames.shape[0])]
+        #X_ij_new = np.rint(res[10][0]).astype(np.int)
+        #Ods_new =  [self.O[self.i + X_ij_new[0] - self.R[k][0], self.j + X_ij_new[1] - self.R[k][1]] for k in range(frames.shape[0])]
 
 
-        break
+        res  = pool.map(feature_map_cython_wrap, args) 
         """
         if ii == -1 :
             res  = [feature_map_wrap(arg) for arg in args]
         else :
             #res  = [feature_map_cython_wrap(arg) for arg in args]
             res  = pool.map(feature_map_cython_wrap, args)
+        """
 
         print 'workers are done'
         nccs = np.array([i[1] for i in res])
-        di   = np.array([i[0][0] for i in res])
-        dj   = np.array([i[0][1] for i in res])
+        di   = np.array([i[0][0] - np.mean(i[0][0]) for i in res])
+        dj   = np.array([i[0][1] - np.mean(i[0][1])  for i in res])
         
         print nccs.shape, di.shape, dj.shape
         # do a weigted sum
@@ -481,4 +483,3 @@ if __name__ == '__main__':
         
         Os.append(self.O.copy())
         deltas.append(X_ij.copy())
-        """

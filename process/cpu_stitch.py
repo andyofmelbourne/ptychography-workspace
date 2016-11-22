@@ -93,17 +93,17 @@ class Cpu_stitcher():
         i    -= self.IW.shape[1] * (pad - 1)//2 + 1
         j    -= self.IW.shape[2] * (pad - 1)//2 + 1
         for k in range(self.IW.shape[0]):
-            Os[k] =  self.O[i - self.R[k][0], j - self.R[k][1]] 
-
+            Os[k] =  O[i - self.R[k][0], j - self.R[k][1]] 
+         
         # return the slice objects such that Od[k] = Os[k][i, j]
         i, j = slice(data.shape[1]//2+1,3*data.shape[1]//2+1,1), slice(data.shape[2]//2+1,3*data.shape[2]//2+1,1)
         return Os, i, j
 
-    def speckle_tracking_update(self, steps=8, window=16, search_window=50):
+    def speckle_tracking_update(self, steps=8, window=16, search_window=50, max_iters=20, min_overlap=3, median_filter=None, polyfit_order=None):
         from multiprocessing import Pool
         import itertools
           
-        X_ij = self.X_ij
+        X_ij = self.X_ij.astype(np.float)
         mask = self.mask
         
         Os     = []
@@ -111,49 +111,60 @@ class Cpu_stitcher():
         NCCs   = []
         errors = []
         
-        errors.append(self.calc_error(X_ij))
+        errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
         print 'Error:', errors[-1]
 
         Os.append(self.O.copy())
         deltas.append(X_ij.copy())
         NCCs.append(np.zeros_like(X_ij[0]))
         
-        pool = Pool(processes=self.IW.shape[0])
-        for ii in range(10):
+        pool = Pool()
+        for ii in range(max_iters):
             print '\n\nloop :', ii
             
             print 'setting up... '
             forwards, i, j = self.cut_object(self.O)
+            overlaps, i, j = self.cut_object(self.WWmap)
+
+            # demand 3x overlap for X_ij updates
+            mask_forwards  = (overlaps > (min_overlap * np.median(self.WW))).astype(np.int)
             frames         = self.IW / (1.0e-5+self.WW)
              
-            #print '\npython stitch:'
-            #x1, n1 =              feature_map(cpu_stitcher.IW[60] / (1.0e-5+cpu_stitcher.WW), Os[60], cpu_stitcher.X_ij, mask, i.start, j.start, window=4, search_window=8)
-            #print '\ncython stitch:'
-            #x2, n2 = utils.feature_map_cython(cpu_stitcher.IW[60] / (1.0e-5+cpu_stitcher.WW), Os[60], cpu_stitcher.X_ij, mask.astype(np.int), \
-            #i.start, j.start, window=4, search_window=8)
-             
-            #speckle_track_np(forwards[0], frames[0], mask, 6)
+            # add a random offset between 0 --> steps-1
+            offset_i = ( (ii + np.arange(forwards.shape[0])) // steps) % steps
+            offset_j = (ii + np.arange(forwards.shape[0])) % steps
             
             print 'sending to workers '
             print forwards.shape, frames.shape, mask.shape, window, search_window, steps
-            args = itertools.izip( frames, forwards, itertools.repeat(X_ij), itertools.repeat(mask.astype(np.int)), \
+            args = itertools.izip( frames, forwards, itertools.repeat(np.rint(X_ij).astype(np.int)), itertools.repeat(mask.astype(np.int)), \
+                                   mask_forwards,\
                                    itertools.repeat(i.start), itertools.repeat(j.start), \
-                                   itertools.repeat(window), itertools.repeat(search_window), itertools.repeat(steps) )
-            #res  = pool.map(feature_map_cython_wrap, args)
-            res  = [feature_map_cython_wrap(arg) for arg in args]
+                                   itertools.repeat(window), itertools.repeat(search_window), itertools.repeat(steps), \
+                                   offset_i, offset_j)
             
+            res  = pool.map(feature_map_cython_wrap, args) 
+
             print 'workers are done'
-            nccs = np.array([i[1][::steps, ::steps] for i in res])
-            di   = np.array([i[0][0][::steps, ::steps] for i in res])
-            dj   = np.array([i[0][1][::steps, ::steps] for i in res])
+            nccs = np.array([i[1] for i in res])
+            di   = np.array([i[0][0] - np.mean(i[0][0]) for i in res])
+            dj   = np.array([i[0][1] - np.mean(i[0][1]) for i in res])
             
             print nccs.shape, di.shape, dj.shape
             # do a weigted sum
             norm = np.sum(nccs, axis=0) + 1.0e-10
             X_ij[0] += np.sum(di*nccs, axis=0) / norm
             X_ij[1] += np.sum(dj*nccs, axis=0) / norm
+
+            if median_filter is not None :
+                from scipy.signal import medfilt2d
+                X_ij[0] = medfilt2d(X_ij[0], median_filter)
+                X_ij[1] = medfilt2d(X_ij[1], median_filter)
             
-            errors.append(self.calc_error(X_ij))
+            if polyfit_order is not None :
+                coeff, X_ij[0] = polyfit2d(X_ij[0], np.ones_like(X_ij[0], dtype=np.bool), polyfit_order)
+                coeff, X_ij[1] = polyfit2d(X_ij[1], np.ones_like(X_ij[1], dtype=np.bool), polyfit_order)
+            
+            errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
             print 'Error:', errors[-1]
             
             if errors[-1] > errors[-2] and ii > 0 :
@@ -162,7 +173,7 @@ class Cpu_stitcher():
             Os.append(self.O.copy())
             deltas.append(X_ij.copy())
         
-        return X_ij, Os, errors
+        return X_ij, np.array(Os), np.array(errors)
 
 def feature_map_cython_wrap(x):
     return utils.feature_map_cython(*x)
@@ -267,6 +278,29 @@ def feature_map(Od, O, X_ij, mask, i, j, window=10, search_window=20, steps=1, o
             plt.show()
     return X_ij_new, ncc
 
+def polyfit2d(Z, mask, order):
+    print 'setting up A and B matrices...'
+    A   = []
+    mat = np.zeros((order, order), dtype=np.float)
+    i = np.linspace(-1, 1, mask.shape[0])
+    j = np.linspace(-1, 1, mask.shape[1])
+    for ii in range(order):
+        for jj in range(order):
+            mat.fill(0)
+            mat[ii, jj] = 1
+            A.append(P.polygrid2d(i, j, mat)[mask])
+    
+    A = np.array(A).T
+    B = Z[mask].flatten()
+    
+    print 'sending to np.linalg.lstsq ...'
+    coeff, r, rank, s = np.linalg.lstsq(A, B)
+    print 'residual:', r
+    coeff = coeff.reshape((order, order))
+    # return the coefficients and the fit
+    fit = P.polygrid2d(i, j, coeff)
+    return coeff, fit
+
 def parse_cmdline_args():
     import argparse
     import os
@@ -284,9 +318,9 @@ def parse_cmdline_args():
     
     # if config is non then read the default from the *.pty dir
     if args.config is None :
-        args.config = os.path.join(os.path.split(args.filename)[0], 'gpu_stitch.ini')
+        args.config = os.path.join(os.path.split(args.filename)[0], 'cpu_stitch.ini')
         if not os.path.exists(args.config):
-            args.config = '../process/gpu_stitch.ini'
+            args.config = '../process/cpu_stitch.ini'
     
     # check that args.config exists
     if not os.path.exists(args.config):
@@ -309,12 +343,12 @@ if __name__ == '__main__':
     # frames, df, R, O, W, ROI, mask
     # Zernike polynomials
     ################################
-    group = params['gpu_stitch']['h5_group']
+    group = params['cpu_stitch']['h5_group']
     
     # ROI
     # ------------------
-    if params['gpu_stitch']['roi'] is not None :
-        ROI = params['gpu_stitch']['roi']
+    if params['cpu_stitch']['roi'] is not None :
+        ROI = params['cpu_stitch']['roi']
     else :
         ROI = [0, f['entry_1/data_1/data'].shape[0], 0, f['entry_1/data_1/data'].shape[1]]
     
@@ -331,28 +365,28 @@ if __name__ == '__main__':
     # df
     # ------------------
     # get the sample to detector distance
-    if params['gpu_stitch']['defocus'] is not None :
-        df = params['gpu_stitch']['defocus']
+    if params['cpu_stitch']['defocus'] is not None :
+        df = params['cpu_stitch']['defocus']
     else :
         df = f['/entry_1/sample_3/geometry/translation'][0, 2]
     
     # R
     # ------------------
     # get the pixel shift coordinates along ss and fs
-    R, du = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['gpu_stitch']['defocus'], offset_to_zero=True)
+    R, du = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
     
     # allow for astigmatism
-    if params['gpu_stitch']['defocus_fs'] is not None :
-        R[:, 1] *= df / params['gpu_stitch']['defocus_fs']
+    if params['cpu_stitch']['defocus_fs'] is not None :
+        R[:, 1] *= df / params['cpu_stitch']['defocus_fs']
     
     R = np.rint(R).astype(np.int)
     
     # W
     # ------------------
     # get the whitefield
-    if params['gpu_stitch']['whitefield'] is not None :
-        W = f[params['gpu_stitch']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
-        if params['gpu_stitch']['whitefield'] == 'process_2/powder' :
+    if params['cpu_stitch']['whitefield'] is not None :
+        W = f[params['cpu_stitch']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
+        if params['cpu_stitch']['whitefield'] == 'process_2/powder' :
             W /= float(f['/entry_1/data_1/data'].shape[0])
     else :
         W = np.mean(data, axis=0)
@@ -360,34 +394,36 @@ if __name__ == '__main__':
     # mask
     # ------------------
     # mask hot / dead pixels
-    if params['gpu_stitch']['mask'] is None :
+    if params['cpu_stitch']['mask'] is None :
         bit_mask = f['entry_1/instrument_1/detector_1/mask'].value
         # hot (4) and dead (8) pixels
         mask     = ~np.bitwise_and(bit_mask, 4 + 8).astype(np.bool) 
     else :
-        mask = f[params['gpu_stitch']['mask']].value
+        mask = f[params['cpu_stitch']['mask']].value
     mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
 
     # delta_ij
     # -------------------
-    if params['gpu_stitch']['delta_ij'] is not None and 'pixel_shifts_ss_gpu_stitch' in f[params['gpu_stitch']['h5_group']].keys():
+    if params['cpu_stitch']['delta_ij'] is not None and 'pixel_shifts_ss_cpu_stitch' in f[params['cpu_stitch']['h5_group']].keys():
         delta_ij    = np.zeros((2,) + f['/entry_1/data_1/data'].shape[1:], dtype=np.float)
-        delta_ij[0] = f[params['gpu_stitch']['h5_group']]['pixel_shifts_ss_gpu_stitch']
-        delta_ij[1] = f[params['gpu_stitch']['h5_group']]['pixel_shifts_fs_gpu_stitch']
+        delta_ij[0] = f[params['cpu_stitch']['h5_group']]['pixel_shifts_ss_cpu_stitch']
+        delta_ij[1] = f[params['cpu_stitch']['h5_group']]['pixel_shifts_fs_cpu_stitch']
         delta_ij    = delta_ij[:, ROI[0]:ROI[1], ROI[2]:ROI[3]]
+        delta_from_file = True
     else :
+        delta_from_file = False
         delta_ij    = None
-
-
-    if delta_ij is not None :
-        delta_ij.fill(0)
+    
     cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
 
-    """
-    if params['gpu_stitch']['fit_grads'] :
-        delta_ij, Os, errors = cpu_stitcher.speckle_tracking_update(steps=params['gpu_stitch']['steps'], \
-                                                                    window=params['gpu_stitch']['window'], \
-                                                                    search_window=params['gpu_stitch']['search_window'])
+    if params['cpu_stitch']['fit_grads'] :
+        delta_ij, Os, errors = cpu_stitcher.speckle_tracking_update(steps=params['cpu_stitch']['steps'], \
+                                                                    window=params['cpu_stitch']['window'], \
+                                                                    search_window=params['cpu_stitch']['search_window'], \
+                                                                    max_iters=params['cpu_stitch']['max_iters'], \
+                                                                    min_overlap=params['cpu_stitch']['min_overlap'], \
+                                                                    median_filter=params['cpu_stitch']['median_filter'], \
+                                                                    polyfit_order=params['cpu_stitch']['polyfit_order'])
     else :
         print 'stitching...'
         Os       = [cpu_stitcher.inverse_map(cpu_stitcher.X_ij)]
@@ -397,89 +433,68 @@ if __name__ == '__main__':
     print 'Object Field of view:', np.array(Os[-1].shape) * du
     print 'Object shape:        ', Os[-1].shape
     print 'Pixel size:          ', du
-    """
 
-    self = cpu_stitcher
-    steps=params['gpu_stitch']['steps']
-    window=params['gpu_stitch']['window']
-    search_window=params['gpu_stitch']['search_window']
+    # write the result 
+    ##################
+    if params['cpu_stitch']['output_file'] is not None :
+        g = h5py.File(params['cpu_stitch']['output_file'])
+        outputdir = os.path.split(params['cpu_stitch']['output_file'])[0]
+    else :
+        g = f
+        outputdir = os.path.split(args.filename)[0]
 
+    # errors
+    if len(errors) > 1 :
+        key = params['cpu_stitch']['h5_group']+'/errors_cpu_stitch'
+        if delta_from_file is True :
+            errors = [g[key][i] for i in range(g[key].shape[0])] + list(errors)
+        if key in g :
+            del g[key]
+        g[key] = np.array(errors)
 
-    from multiprocessing import Pool
-    import itertools
-      
-    X_ij = self.X_ij.astype(np.float)
-    mask = self.mask
+    # object history
+    if len(Os) > 1:
+        key = params['cpu_stitch']['h5_group']+'/Os_cpu_stitch'
+        if delta_from_file is True :
+            Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os)  
+        if key in g :
+            del g[key]
+        g[key] = np.array(Os)
     
-    Os     = []
-    deltas = []
-    NCCs   = []
-    errors = []
+    # pixel shifts
+    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_fs_cpu_stitch'
+    if key in g :
+        del g[key]
+    grad_x = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    shape = delta_ij[0].shape
+    grad_x[ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[1]
+    g[key] = grad_x
     
-    errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
-    print 'Error:', errors[-1]
+    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_ss_cpu_stitch'
+    if key in g :
+        del g[key]
+    grad_y = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    grad_y[ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[0]
+    g[key] = grad_y
 
-    Os.append(self.O.copy())
-    deltas.append(X_ij.copy())
-    NCCs.append(np.zeros_like(X_ij[0]))
+    # object
+    key = params['cpu_stitch']['h5_group']+'/O_cpu_stitch'
+    if key in g :
+        del g[key]
+    g[key] = Os[-1] #np.sqrt(O).astype(np.complex128)
     
-    pool = Pool(processes=self.IW.shape[0])
-    for ii in range(20):
-        print '\n\nloop :', ii
-        
-        print 'setting up... '
-        forwards, i, j = self.cut_object(self.O)
-        frames         = self.IW / (1.0e-5+self.WW)
-         
-        # add a random offset between 0 --> steps-1
-        #offset_i = np.random.randint(0, steps, forwards.shape[0])
-        #offset_j = np.random.randint(0, steps, forwards.shape[0])
-        offset_i = 0 * np.arange(forwards.shape[0]) // steps
-        offset_j = 0 * np.arange(forwards.shape[0]) % steps
-        
-        print 'sending to workers '
-        print forwards.shape, frames.shape, mask.shape, window, search_window, steps
-        args = itertools.izip( frames, forwards, itertools.repeat(np.rint(X_ij).astype(np.int)), itertools.repeat(mask.astype(np.int)), \
-                               itertools.repeat(i.start), itertools.repeat(j.start), \
-                               itertools.repeat(window), itertools.repeat(search_window), itertools.repeat(steps), \
-                               offset_i, offset_j)
-        
-        #X_ij_new, NCC = feature_map_cython_wrap(args.next())
-        #res  = pool.map(feature_map_cython_wrap, args)
-        #res  = [feature_map_wrap(arg) for arg in args]
-        
-        #X_ij_old = np.rint(X_ij).astype(np.int)
-        #Ods_old =  [self.O[self.i + X_ij_old[0] - self.R[k][0], self.j + X_ij_old[1] - self.R[k][1]] for k in range(frames.shape[0])]
-
-        #X_ij_new = np.rint(res[10][0]).astype(np.int)
-        #Ods_new =  [self.O[self.i + X_ij_new[0] - self.R[k][0], self.j + X_ij_new[1] - self.R[k][1]] for k in range(frames.shape[0])]
-
-
-        res  = pool.map(feature_map_cython_wrap, args) 
-        """
-        if ii == -1 :
-            res  = [feature_map_wrap(arg) for arg in args]
-        else :
-            #res  = [feature_map_cython_wrap(arg) for arg in args]
-            res  = pool.map(feature_map_cython_wrap, args)
-        """
-
-        print 'workers are done'
-        nccs = np.array([i[1] for i in res])
-        di   = np.array([i[0][0] - np.mean(i[0][0]) for i in res])
-        dj   = np.array([i[0][1] - np.mean(i[0][1])  for i in res])
-        
-        print nccs.shape, di.shape, dj.shape
-        # do a weigted sum
-        norm = np.sum(nccs, axis=0) + 1.0e-10
-        X_ij[0] += np.sum(di*nccs, axis=0) / norm
-        X_ij[1] += np.sum(dj*nccs, axis=0) / norm
-        
-        errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
-        print 'Error:', errors[-1]
-        
-        #if errors[-1] > errors[-2] and ii > 0 :
-        #    break
-        
-        Os.append(self.O.copy())
-        deltas.append(X_ij.copy())
+    # whitefield
+    key = params['cpu_stitch']['h5_group']+'/whitefield_cpu_stitch'
+    if key in g :
+        del g[key]
+    g[key] = W
+    
+    g.close()
+    
+    # copy the config file
+    ######################
+    try :
+        import shutil
+        shutil.copy(args.config, outputdir)
+    except Exception as e :
+        print e

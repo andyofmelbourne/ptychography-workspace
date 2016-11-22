@@ -23,7 +23,7 @@ from Ptychography import utils
 
 #from widgets import Write_config_file_widget
 from widgets import Show_stitch_widget
-from widgets import Show_gpu_stitch_widget
+from widgets import Show_cpu_stitch_widget
 from widgets import Show_frames_widget
 from widgets import Select_frames_widget
 from widgets import Show_frames_selection_widget
@@ -107,9 +107,9 @@ class Gui(PyQt4.QtGui.QTabWidget):
         # Show gpu stitch tab
         #####################
         # load the default config file
-        params = load_config(filename, name='gpu_stitch.ini')
-        self.tabs.append( Show_gpu_stitch_widget(filename, params) )
-        self.addTab(self.tabs[-1], "gpu stitch")
+        params = load_config(filename, name='cpu_stitch.ini')
+        self.tabs.append( Show_cpu_stitch_widget(filename, params) )
+        self.addTab(self.tabs[-1], "stitch with pixel shifts")
         
         # mask Maker tab
         ################

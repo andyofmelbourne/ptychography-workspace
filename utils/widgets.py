@@ -130,6 +130,14 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
         self.setLayout(self.layout)
     
     def show(self, filename, name, refresh=False):
+        """
+        plots:
+            (N,)      float, int          --> line plot
+            (N, M<4)  float, int          --> line plots
+            (N, M>4)  float, complex, int --> 2d image
+            (N, M>4)  complex             --> 2d images (abs, angle, real, imag)
+            (N, M, L) float, complex, int --> 2d images (real) with slider
+        """
         # make plot
         f = h5py.File(filename, 'r')
         shape = f[name].shape
@@ -156,11 +164,20 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
             if refresh :
                 self.plotW.setImage(f[name][()].real.T, autoRange = False, autoLevels = False, autoHistogramRange = False)
             else :
-                frame_plt = pg.PlotItem(title = name)
+                if 'complex' in f[name].dtype.name :
+                    title = name + ' (abs, angle, real, imag)'
+                else :
+                    title = name
+                
+                frame_plt = pg.PlotItem(title = title)
                 self.plotW = pg.ImageView(view = frame_plt)
                 self.plotW.ui.menuBtn.hide()
                 self.plotW.ui.roiBtn.hide()
-                self.plotW.setImage(f[name][()].real.T)
+                if 'complex' in f[name].dtype.name :
+                    im = f[name][()].T
+                    self.plotW.setImage(np.array([np.abs(im), np.angle(im), im.real, im.imag]))
+                else :
+                    self.plotW.setImage(f[name][()].T)
 
         elif len(shape) == 3 :
             if refresh :
@@ -171,8 +188,8 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
                 self.plotW = pg.ImageView(view = frame_plt)
                 self.plotW.ui.menuBtn.hide()
                 self.plotW.ui.roiBtn.hide()
-                self.plotW.setImage(f[name][0].T)
-
+                self.plotW.setImage(f[name][0].real.T)
+                
                 # add a little 1d plot with a vline
                 self.plotW2 = pg.PlotWidget(title = 'index')
                 self.plotW2.plot(np.arange(f[name].shape[0]), pen=(255, 150, 150))
@@ -182,7 +199,7 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
                 def replot_frame():
                     i = int(vline.value())
                     f = h5py.File(filename, 'r')
-                    self.plotW.setImage( f[name][i].T, autoRange = False, autoLevels = False, autoHistogramRange = False)
+                    self.plotW.setImage( f[name][i].real.T, autoRange = False, autoLevels = False, autoHistogramRange = False)
                     f.close()
                     
                 vline.sigPositionChanged.connect(replot_frame)
@@ -844,7 +861,7 @@ class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView = pg.ImageView(view = frame_plt)
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
-        self.stitch_path = config_dict['cpu_stitch']['h5_group']+'/O_cpu_stitch'
+        self.stitch_path = config_dict['cpu_stitch']['h5_group']+'/O'
         #self.R_path = config_dict['stitch']['h5_group']+'/R'
         self.im_init = False
         if self.stitch_path in self.f :

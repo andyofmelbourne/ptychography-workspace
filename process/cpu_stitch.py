@@ -301,6 +301,125 @@ def polyfit2d(Z, mask, order):
     fit = P.polygrid2d(i, j, coeff)
     return coeff, fit
 
+
+def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
+    """
+    ss_shifts[i, j] = i - i_O
+    fs_shifts[i, j] = j - j_O
+    
+    i, j are expected pixel locations of a detector speckle in the 
+    object and i_O, j_O are the found locations of the speckle in 
+    the object. So:
+        - (I/W)[i, j] = O[i + ss_shifts[i, j] - R_i, j + ss_shifts[i, j] - R_j]  
+    
+    - First convert the pixel shifts to angles (radians)
+      anglex_[i, j] = arctan(fs_shifts_[i, j] * dx / df) 
+      angley_[i, j] = arctan(ss_shifts_[i, j] * dx / df) 
+      where df = focus --> sample distance 
+            dx = virtual pixel size (pixel size without phase curvature)
+               = du * df / z ; pixel size * defocus / (focus --> detector)
+    
+    - The angles are directly related to the phase derivative at the pupil
+      by:
+        - (d phi / dx)_ij = anglex_ij
+        - (d phi / dy)_ij = angley_ij
+
+      where we have defined:
+        pupil(x) = |A(x)| x exp( 2 pi i / lamb * phi(x) )   (1)
+        pupil(x) = |A(x)| x exp( i phase(x) )                (2)
+    
+    - So we need to integrate anglex and angley on the pixel grid:
+        - phi_y_ij = dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
+        - phi_x_ij = dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
+
+    - We can determine phi_0,j and phi_i,0 up to a constant offset with:
+        - phi_y_i0 = phi_i0 - phi_00
+        - phi_x_0j = phi_0j - phi_00
+
+    - Therefore:
+        - phi_ij + phi_00 = phi_y_ij + phi_x_0j 
+        and the other way
+        - phi_ij + phi_00 = phi_x_ij + phi_y_i0 
+
+    - Finally I guess we should take the average:
+        - phi_ij + phi_00 = (phi_y_ij + phi_x_0j + phi_x_ij + phi_y_i0) / 2.
+        
+      we don't care about the phi_00 factor, since it is not measurable.
+
+    Returns
+    -------
+    phi : 2D numpy array
+        The aberration function of the pupil as defined in (1).
+    
+    phase : 2D numpy array
+        The phase of the pupil as defined in (2). 
+    """
+    # -----------------------------------------------------
+    # convert the pixel shifts to angles (radians)
+    #   - anglex_[i, j] = arctan(fs_shifts_[i, j] * dx / df) 
+    #   - angley_[i, j] = arctan(ss_shifts_[i, j] * dx / df) 
+    # -----------------------------------------------------
+    angley = np.arctan2(ss_shifts * dx[0], df)
+    anglex = np.arctan2(fs_shifts * dx[1], df)
+    
+    # ---------------------------------------------------------------
+    # So we need to integrate anglex and angley on the pixel grid:
+    #    - phi_y_ij = dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
+    #    - phi_x_ij = dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
+    # ---------------------------------------------------------------
+    phi_y = dx[0] * np.cumsum(angley, axis=0, dtype=np.float)
+    phi_x = dx[1] * np.cumsum(anglex, axis=1, dtype=np.float)
+    
+    # ----------------------------------------------------------------------
+    # Finally I guess we should take the average:
+    #   - phi_ij + phi_00 = (phi_y_ij + phi_x_0j + phi_x_ij + phi_y_i0) / 2.
+    # ----------------------------------------------------------------------
+    phi = phi_y + phi_x + phi_x[0, :]
+    
+    # this is because broadcasting is performed along the last dimension
+    phi  = (phi.T + phi_y[:, 0].T).T 
+    phi /= 2.
+
+    phase = 2. * np.pi / lamb * phi
+    return phi, phase
+
+def get_focus_probe(P):
+    # zero pad
+    P2 = np.zeros( (2*P.shape[0], 2*P.shape[1]), dtype=P.dtype)
+    P2[:P.shape[0], :P.shape[1]] = P
+    P2 = np.roll(P2, P.shape[0]//2, 0)
+    P2 = np.roll(P2, P.shape[1]//2, 1)
+     
+    # real-space probe
+    P2 = np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(P2)))
+    return P2
+
+def get_sample_plane_probe(p, lamb, z, du, df):
+    # zero pad
+    P2 = np.zeros( (2*p.shape[0], 2*p.shape[1]), dtype=p.dtype)
+    P2[:p.shape[0], :p.shape[1]] = p
+    P2 = np.roll(P2, p.shape[0]//2, 0)
+    P2 = np.roll(P2, p.shape[1]//2, 1)
+    
+    dq = (z / df) / (du * np.array(P2.shape))
+
+    i = np.fft.fftfreq(P2.shape[0], 1/float(P2.shape[0])) * dq[0]
+    j = np.fft.fftfreq(P2.shape[1], 1/float(P2.shape[1])) * dq[1]
+    i, j = np.meshgrid(i, j, indexing='ij')
+    
+    exp = np.exp(-1J * lamb * df * (i**2 + j**2))
+
+    P3 = np.fft.ifftn(np.fft.fftn( P2 ) * exp.conj())
+    
+    return P3
+
+
+def fit_Zernike_poly(phi):
+    """
+    """
+    pass
+
+
 def parse_cmdline_args():
     import argparse
     import os
@@ -341,7 +460,6 @@ if __name__ == '__main__':
     ################################
     # Get the inputs
     # frames, df, R, O, W, ROI, mask
-    # Zernike polynomials
     ################################
     group = params['cpu_stitch']['h5_group']
     
@@ -373,7 +491,7 @@ if __name__ == '__main__':
     # R
     # ------------------
     # get the pixel shift coordinates along ss and fs
-    R, du = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
+    R, dx = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
     
     # allow for astigmatism
     if params['cpu_stitch']['defocus_fs'] is not None :
@@ -404,10 +522,10 @@ if __name__ == '__main__':
 
     # delta_ij
     # -------------------
-    if params['cpu_stitch']['delta_ij'] is not None and 'pixel_shifts_ss_cpu_stitch' in f[params['cpu_stitch']['h5_group']].keys():
+    if params['cpu_stitch']['delta_ij'] is not None and 'pixel_shifts_ss' in f[group].keys():
         delta_ij    = np.zeros((2,) + f['/entry_1/data_1/data'].shape[1:], dtype=np.float)
-        delta_ij[0] = f[params['cpu_stitch']['h5_group']]['pixel_shifts_ss_cpu_stitch']
-        delta_ij[1] = f[params['cpu_stitch']['h5_group']]['pixel_shifts_fs_cpu_stitch']
+        delta_ij[0] = f[group]['pixel_shifts_ss']
+        delta_ij[1] = f[group]['pixel_shifts_fs']
         delta_ij    = delta_ij[:, ROI[0]:ROI[1], ROI[2]:ROI[3]]
         delta_from_file = True
     else :
@@ -430,10 +548,61 @@ if __name__ == '__main__':
         delta_ij = cpu_stitcher.X_ij
         errors   = [0]
 
-    print 'Object Field of view:', np.array(Os[-1].shape) * du
+    print 'Object Field of view:', np.array(Os[-1].shape) * dx
     print 'Object shape:        ', Os[-1].shape
-    print 'Pixel size:          ', du
+    print 'Virtual Pixel size:  ', dx
 
+    # get the phase
+    ###############
+    import scipy.constants as sc
+    du = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
+    z  = f['/entry_1/instrument_1/detector_1/distance'][()]
+    E  = f['/entry_1/instrument_1/source_1/energy'][()]
+    wavelen = sc.h * sc.c / E
+    
+    aberrations, phase = pixel_shifts_to_phase(delta_ij[0], delta_ij[1], dx, df, wavelen)
+    pupil              = np.sqrt(W) * np.exp(1J * phase)
+    
+    # put back into det frame
+    #########################
+    delta_ij_full = np.zeros((2,) + f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    delta_ij_full[0][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[0]
+    delta_ij_full[1][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[1]
+    
+    phase_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    phase_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = phase
+    
+    aberrations_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    aberrations_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = aberrations
+    
+    pupil_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.complex)
+    pupil_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = pupil
+    
+    W_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+    W_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = W
+    
+    # get the sample plane probe
+    # ray tracing
+    ############################
+    W_ray_tracing     = np.zeros((2*W.shape[0], 2*W.shape[1]), dtype=np.complex128)
+    phase_ray_tracing = np.zeros((2*W.shape[0], 2*W.shape[1]), dtype=np.complex128)
+    
+    W_ray_tracing[cpu_stitcher.i + delta_ij[0] + W.shape[0]//2, \
+                  cpu_stitcher.j + delta_ij[1] + W.shape[1]//2] = W
+    
+    phase_ray_tracing[cpu_stitcher.i + delta_ij[0] + W.shape[0]//2, \
+                      cpu_stitcher.j + delta_ij[1] + W.shape[1]//2] = np.exp(-1J * phase)
+    
+    P_ray_tracing = np.sqrt(W_ray_tracing) * phase_ray_tracing
+    
+    # get the focus spot
+    ####################
+    P_focus = get_focus_probe(pupil)
+    
+    # get the sample plane probe
+    ############################
+    P_sample = get_sample_plane_probe(pupil, wavelen, z, du, df)
+    
     # write the result 
     ##################
     if params['cpu_stitch']['output_file'] is not None :
@@ -442,10 +611,40 @@ if __name__ == '__main__':
     else :
         g = f
         outputdir = os.path.split(args.filename)[0]
+    
+    # pupil
+    key = params['cpu_stitch']['h5_group']+'/pupil'
+    if key in g :
+        del g[key]
+    g[key] = pupil_full
+
+    # aberration
+    key = params['cpu_stitch']['h5_group']+'/abberation'
+    if key in g :
+        del g[key]
+    g[key] = aberrations_full
+
+    # ray_tracing
+    key = params['cpu_stitch']['h5_group']+'/probe_sample_ray'
+    if key in g :
+        del g[key]
+    g[key] = P_ray_tracing
+
+    # sample plane probe propagation
+    key = params['cpu_stitch']['h5_group']+'/probe_sample_fres'
+    if key in g :
+        del g[key]
+    g[key] = P_sample
+
+    # focal spot
+    key = params['cpu_stitch']['h5_group']+'/probe_focus'
+    if key in g :
+        del g[key]
+    g[key] = P_focus
 
     # errors
     if len(errors) > 1 :
-        key = params['cpu_stitch']['h5_group']+'/errors_cpu_stitch'
+        key = params['cpu_stitch']['h5_group']+'/errors'
         if delta_from_file is True :
             errors = [g[key][i] for i in range(g[key].shape[0])] + list(errors)
         if key in g :
@@ -454,7 +653,7 @@ if __name__ == '__main__':
 
     # object history
     if len(Os) > 1:
-        key = params['cpu_stitch']['h5_group']+'/Os_cpu_stitch'
+        key = params['cpu_stitch']['h5_group']+'/Os'
         if delta_from_file is True :
             Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os)  
         if key in g :
@@ -462,32 +661,27 @@ if __name__ == '__main__':
         g[key] = np.array(Os)
     
     # pixel shifts
-    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_fs_cpu_stitch'
+    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_fs'
     if key in g :
         del g[key]
-    grad_x = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
-    shape = delta_ij[0].shape
-    grad_x[ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[1]
-    g[key] = grad_x
+    g[key] = delta_ij_full[1]
     
-    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_ss_cpu_stitch'
+    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_ss'
     if key in g :
         del g[key]
-    grad_y = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
-    grad_y[ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[0]
-    g[key] = grad_y
+    g[key] = delta_ij_full[0]
 
     # object
-    key = params['cpu_stitch']['h5_group']+'/O_cpu_stitch'
+    key = params['cpu_stitch']['h5_group']+'/O'
     if key in g :
         del g[key]
     g[key] = Os[-1] #np.sqrt(O).astype(np.complex128)
     
     # whitefield
-    key = params['cpu_stitch']['h5_group']+'/whitefield_cpu_stitch'
+    key = params['cpu_stitch']['h5_group']+'/whitefield'
     if key in g :
         del g[key]
-    g[key] = W
+    g[key] = W_full
     
     g.close()
     

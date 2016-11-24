@@ -321,16 +321,18 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     
     - The angles are directly related to the phase derivative at the pupil
       by:
-        - (d phi / dx)_ij = anglex_ij
-        - (d phi / dy)_ij = angley_ij
-
+        - (d phi / dx)_ij = - anglex_ij
+        - (d phi / dy)_ij = - angley_ij
+        
       where we have defined:
-        pupil(x) = |A(x)| x exp( 2 pi i / lamb * phi(x) )   (1)
+        pupil(x) = |A(x)| x exp( - 2 pi i / lamb * phi(x) )  (1)
         pupil(x) = |A(x)| x exp( i phase(x) )                (2)
     
+      Note the minus sign in the definition for phi. 
+      
     - So we need to integrate anglex and angley on the pixel grid:
-        - phi_y_ij = dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
-        - phi_x_ij = dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
+        - phi_y_ij = - dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
+        - phi_x_ij = - dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
 
     - We can determine phi_0,j and phi_i,0 up to a constant offset with:
         - phi_y_i0 = phi_i0 - phi_00
@@ -364,11 +366,11 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     
     # ---------------------------------------------------------------
     # So we need to integrate anglex and angley on the pixel grid:
-    #    - phi_y_ij = dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
-    #    - phi_x_ij = dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
+    #    - phi_y_ij = - dx[0] * sum_k=0^i-1 angley_ij = phi_ij - phi_0j
+    #    - phi_x_ij = - dx[1] * sum_k=0^j-1 anglex_ij = phi_ij - phi_i0
     # ---------------------------------------------------------------
-    phi_y = dx[0] * np.cumsum(angley, axis=0, dtype=np.float)
-    phi_x = dx[1] * np.cumsum(anglex, axis=1, dtype=np.float)
+    phi_y = - dx[0] * np.cumsum(angley, axis=0, dtype=np.float)
+    phi_x = - dx[1] * np.cumsum(anglex, axis=1, dtype=np.float)
     
     # ----------------------------------------------------------------------
     # Finally I guess we should take the average:
@@ -380,7 +382,7 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     phi  = (phi.T + phi_y[:, 0].T).T 
     phi /= 2.
 
-    phase = 2. * np.pi / lamb * phi
+    phase = - 2. * np.pi / lamb * phi
     return phi, phase
 
 def get_focus_probe(P):
@@ -473,8 +475,8 @@ if __name__ == '__main__':
     # frames
     # ------------------
     # get the frames to process
-    if 'good_frames' in f[group] :
-        good_frames = list(f[group]['good_frames'][()])
+    if params['cpu_stitch']['good_frames'] is not None :
+        good_frames = list(f[params['cpu_stitch']['good_frames']][()])
     else :
         good_frames = range(f['entry_1/data_1/data'].shape[0])
     
@@ -522,10 +524,9 @@ if __name__ == '__main__':
 
     # delta_ij
     # -------------------
-    if params['cpu_stitch']['delta_ij'] is not None and 'pixel_shifts_ss' in f[group].keys():
+    if params['cpu_stitch']['pixel_shifts'] is not None :
         delta_ij    = np.zeros((2,) + f['/entry_1/data_1/data'].shape[1:], dtype=np.float)
-        delta_ij[0] = f[group]['pixel_shifts_ss']
-        delta_ij[1] = f[group]['pixel_shifts_fs']
+        delta_ij    = f[params['cpu_stitch']['pixel_shifts']][()]
         delta_ij    = delta_ij[:, ROI[0]:ROI[1], ROI[2]:ROI[3]]
         delta_from_file = True
     else :
@@ -545,7 +546,6 @@ if __name__ == '__main__':
     else :
         print 'stitching...'
         Os       = [cpu_stitcher.inverse_map(cpu_stitcher.X_ij)]
-        delta_ij = cpu_stitcher.X_ij
         errors   = [0]
 
     print 'Object Field of view:', np.array(Os[-1].shape) * dx
@@ -587,11 +587,11 @@ if __name__ == '__main__':
     W_ray_tracing     = np.zeros((2*W.shape[0], 2*W.shape[1]), dtype=np.complex128)
     phase_ray_tracing = np.zeros((2*W.shape[0], 2*W.shape[1]), dtype=np.complex128)
     
-    W_ray_tracing[cpu_stitcher.i + delta_ij[0] + W.shape[0]//2, \
-                  cpu_stitcher.j + delta_ij[1] + W.shape[1]//2] = W
+    W_ray_tracing[cpu_stitcher.i + cpu_stitcher.X_ij[0] + W.shape[0]//2, \
+                  cpu_stitcher.j + cpu_stitcher.X_ij[1] + W.shape[1]//2] = W
     
-    phase_ray_tracing[cpu_stitcher.i + delta_ij[0] + W.shape[0]//2, \
-                      cpu_stitcher.j + delta_ij[1] + W.shape[1]//2] = np.exp(-1J * phase)
+    phase_ray_tracing[cpu_stitcher.i + cpu_stitcher.X_ij[0] + W.shape[0]//2, \
+                      cpu_stitcher.j + cpu_stitcher.X_ij[1] + W.shape[1]//2] = np.exp(1J * phase)
     
     P_ray_tracing = np.sqrt(W_ray_tracing) * phase_ray_tracing
     
@@ -612,11 +612,21 @@ if __name__ == '__main__':
         g = f
         outputdir = os.path.split(args.filename)[0]
     
+    if group not in g:
+        print g.keys()
+        g.create_group(group)
+
     # pupil
     key = params['cpu_stitch']['h5_group']+'/pupil'
     if key in g :
         del g[key]
     g[key] = pupil_full
+
+    # phase
+    key = params['cpu_stitch']['h5_group']+'/phase'
+    if key in g :
+        del g[key]
+    g[key] = phase_full
 
     # aberration
     key = params['cpu_stitch']['h5_group']+'/abberation'
@@ -661,16 +671,11 @@ if __name__ == '__main__':
         g[key] = np.array(Os)
     
     # pixel shifts
-    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_fs'
+    key = params['cpu_stitch']['h5_group']+'/pixel_shifts'
     if key in g :
         del g[key]
-    g[key] = delta_ij_full[1]
+    g[key] = delta_ij_full
     
-    key = params['cpu_stitch']['h5_group']+'/pixel_shifts_ss'
-    if key in g :
-        del g[key]
-    g[key] = delta_ij_full[0]
-
     # object
     key = params['cpu_stitch']['h5_group']+'/O'
     if key in g :

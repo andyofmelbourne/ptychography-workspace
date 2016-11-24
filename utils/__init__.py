@@ -1,5 +1,6 @@
 import utils
 import numpy
+import optics
 import pyximport; pyximport.install(setup_args={"include_dirs":numpy.get_include()})
 
 from feature_matching import feature_map_cython

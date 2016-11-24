@@ -77,7 +77,7 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
     for j in range(1, max_order+1):
         n, m, name           = Noll_indices[j]
         mat, A               = make_Zernike_polynomial_cartesian(n, m, order = max_order)
-        Z_polynomials.append(mat * A * dA)
+        Z_polynomials.append(mat * A)
     
     # define the product method
     # -------------------------
@@ -85,7 +85,7 @@ def make_Zernike_basis(mask, roi = None, max_order = 100, return_grids = False, 
     def product(a, b):
         c = P.polygrid2d(y[roi[0]:roi[1]+1], x[roi[2]:roi[3]+1], a)
         d = P.polygrid2d(y[roi[0]:roi[1]+1], x[roi[2]:roi[3]+1], b)
-        v = np.sum(sub_mask * c * d)
+        v = np.sum(dA * sub_mask * c * d)
         return v
     
     basis = Gram_Schmit_orthonormalisation(Z_polynomials, product)

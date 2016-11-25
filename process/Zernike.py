@@ -50,7 +50,153 @@ import optics
 from numpy.polynomial import polynomial as P
 from numpy.polynomial import legendre as L
 
+def variance_minimising_subtraction(f, g):
+    """
+    find min(f - a * g)|_a
+    """
+    fm = np.mean(f)
+    gm = np.mean(g)
+    a = np.sum( (g - gm)*(f - fm) ) / np.sum( (g - gm)**2 )
+    return a
 
+
+def get_focus_probe(P):
+    # zero pad
+    P2 = np.zeros( (2*P.shape[0], 2*P.shape[1]), dtype=P.dtype)
+    P2[:P.shape[0], :P.shape[1]] = P
+    P2 = np.roll(P2, P.shape[0]//2, 0)
+    P2 = np.roll(P2, P.shape[1]//2, 1)
+     
+    # real-space probe
+    P2 = np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(P2)))
+    return P2
+
+
+def calculate_Zernike_coeff(phase, orders, dq, basis=None, basis_grid=None, y=None, x=None):
+    # Orthogonalise the Zernike polynomials 
+    # -------------------------------------
+    # define the x-y grid to evaluate the polynomials 
+    # evaluate on our grid [2xN, 2xM] where N and M are the frame dims
+    # rectangle in circle domain
+    if basis is None :
+        shape = phase.shape
+        rat = float(shape[0])/float(shape[1])
+        x   = np.sqrt(1. / (1. + rat**2))
+        y   = rat * x
+        dom = [-y, y, -x, x]
+        roi = shape
+        y_vals  = np.linspace(dom[0], dom[1], shape[0])
+        x_vals  = np.linspace(dom[2], dom[3], shape[1])
+        
+        basis, basis_grid, y, x = optics.fit_Zernike.make_Zernike_basis(\
+                                  np.ones_like(phase).astype(np.bool), \
+                                  roi = None, max_order = orders, return_grids = True, \
+                                  yx_bounds = dom, test = False)
+    
+    # get the Zernike coefficients
+    # ----------------------------
+    phi = phase 
+    
+    dA = (y[1]-y[0])*(x[1]-x[0])
+    z = [np.sum(dA * b * phi) for b in basis_grid]
+    z = np.array(z)
+
+    # get the Zernike fit in a polynomial basis
+    z_poly = np.sum( [z[i] * basis[i] for i in range(len(basis))], axis=0)
+
+    print '\n\n'
+    print 'Zernike coefficients'
+    print '--------------------'
+    print 'Noll index, weight'
+    for i in range(orders):
+        print i+1, z[i]
+    return z, z_poly, basis, basis_grid, y, x
+
+def get_geometric_aberrations(phase, y, x, dq, wavelen, \
+        remove_piston      = False, \
+        remove_tilt        = False, \
+        remove_astigmatism = False, \
+        remove_defocus     = False):
+    
+    # rescale y and x 
+    dA = (y[1]-y[0])*(x[1]-x[0])
+    qy = y/(y[1]-y[0]) * dq[0]
+    qx = x/(x[1]-x[0]) * dq[1]
+    qy, qx = np.meshgrid(qy, qx, indexing='ij')
+    
+    # find the geometric aberrations by performing 
+    # a variance minimising subtraction of each of 
+    # the aberration terms
+    # - remove the aberrations as we go
+    
+    print '\nCalculating and removing geometric aberrations:'
+    print 'variance of phase:', np.var(phase)
+    
+    # defocus
+    # -------
+    phi_df = - np.pi * wavelen * 1. * (qy**2 + qx**2)
+    phi_fx = - np.pi * wavelen * 1. * qx**2
+    phi_fy = - np.pi * wavelen * 1. * qy**2
+    defocus   = variance_minimising_subtraction(phase, phi_df)
+    defocus_x = variance_minimising_subtraction(phase, phi_fx)
+    defocus_y = variance_minimising_subtraction(phase, phi_fy)
+    
+    if remove_defocus :
+        phase -= defocus * phi_df
+        print '\nRemoving defocus', defocus
+        print 'variance of phase:', np.var(phase)
+
+    # astigmatism 
+    # ---------------------
+    phi_as = - np.pi * wavelen * 1. * (qx**2 - qy**2)
+    astigmatism = variance_minimising_subtraction(phase, phi_as)
+
+    if remove_astigmatism :
+        phase -= astigmatism * phi_as
+        print '\nRemoving astigmatism', astigmatism
+        print 'variance of phase:', np.var(phase)
+
+    # tilt x (or fs)
+    # ---------------------
+    phi_tx = -2. * np.pi * 1. * qx
+    tilt_x = variance_minimising_subtraction(phase, phi_tx)
+    
+    if remove_tilt :
+        phase -= tilt_x * phi_tx
+        print '\nRemoving tilt_x', tilt_x
+        print 'variance of phase:', np.var(phase)
+
+    # tilt y (or ss)
+    # ---------------------
+    phi_ty = -2. * np.pi * 1. * qy
+    tilt_y = variance_minimising_subtraction(phase, phi_ty)
+    
+    if remove_tilt :
+        phase -= tilt_y * phi_ty
+        print '\nRemoving tilt_y', tilt_y
+        print 'variance of phase:', np.var(phase)
+
+    # piston
+    # ---------------------
+    piston = np.mean(phase)
+    
+    if remove_piston :
+        phase -= piston
+        print '\nRemoving piston', piston
+        print 'variance of phase:', np.var(phase)
+    
+    
+    print '\n\n'
+    print 'Geometric aberrations'
+    print '---------------------'
+    print 'defocus       :', defocus, '(m) (+ve is overfocus)'
+    print 'defocus fs    :', defocus_x, '(m)'
+    print 'defocus ss    :', defocus_y, '(m)'
+    print 'astigmatism   :', astigmatism, '(m)'
+    print 'tilt fs       :', tilt_x, '(rad) relative to centre of roi'
+    print 'tilt ss       :', tilt_y, '(rad) relative to centre of roi'
+
+    return phase
 
 def parse_cmdline_args():
     import argparse
@@ -109,151 +255,66 @@ if __name__ == '__main__':
     else :
         phase_full = None
 
-    # phase
+    # Zernike orders
     # ------------------
     if params['Zernike']['orders'] is not None :
         orders = params['Zernike']['orders']
     else :
         orders = 36
     
+    # W
+    # ------------------
+    # get the whitefield
+    if params['Zernike']['whitefield'] is not None :
+        W = f[params['Zernike']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
+        
+        if params['Zernike']['whitefield'] == 'process_2/powder' :
+            W /= float(f['/entry_1/data_1/data'].shape[0])
+    else :
+        W = None
+    
     phase = phase_full[ROI[0]:ROI[1], ROI[2]:ROI[3]]
     
-    # Orthogonalise the Zernike polynomials 
-    # -------------------------------------
-    # define the x-y grid to evaluate the polynomials 
-    # evaluate on our grid [2xN, 2xM] where N and M are the frame dims
-    # rectangle in circle domain
-    shape = (ROI[1]-ROI[0], ROI[3]-ROI[2])
-    rat = float(shape[0])/float(shape[1])
-    x   = np.sqrt(1. / (1. + rat**2))
-    y   = rat * x
-    dom = [-y, y, -x, x]
-    roi = shape
-    y_vals  = np.linspace(dom[0], dom[1], shape[0])
-    x_vals  = np.linspace(dom[2], dom[3], shape[1])
-    
-    basis, basis_grid, y, x = optics.fit_Zernike.make_Zernike_basis(\
-                              np.ones_like(phase).astype(np.bool), \
-                              roi = None, max_order = orders, return_grids = True, \
-                              yx_bounds = dom, test = False)
-
-    # get the Zernike coefficients
-    # ----------------------------
+    # calculate the Zernike coefficients
+    # ----------------------------------
+    # calcualte dq
     import scipy.constants as sc
-    du = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
-    z  = f['/entry_1/instrument_1/detector_1/distance'][()]
-    E  = f['/entry_1/instrument_1/source_1/energy'][()]
+    du      = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], \
+                        f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
+    z       = f['/entry_1/instrument_1/detector_1/distance'][()]
+    E       = f['/entry_1/instrument_1/source_1/energy'][()]
     wavelen = sc.h * sc.c / E
     dq      = du / (wavelen * z)
+    z, z_poly, basis, basis_grid, y, x = calculate_Zernike_coeff(phase, orders, dq)
+
+    # get defocus, astigmatism and tilt
+    # ---------------------------------
+    phase = get_geometric_aberrations(phase, y, x, dq, wavelen, \
+            remove_piston      = params['Zernike']['remove_piston'], \
+            remove_tilt        = params['Zernike']['remove_tilt'], \
+            remove_astigmatism = params['Zernike']['remove_astigmatism'], \
+            remove_defocus     = params['Zernike']['remove_defocus'])
     
-    # get the aberration function (phi)
-    #phi = - phase / (2. * np.pi * wavelen)
-    phi = phase 
+    # calculate the Zernike again
+    # ----------------------------------
+    z, z_poly, basis, basis_grid, y, x = calculate_Zernike_coeff(phase, orders, dq, basis, basis_grid, y, x)
     
-    dA = (y[1]-y[0])*(x[1]-x[0])
-    z = [np.sum(dA * b * phi) for b in basis_grid]
-    z = np.array(z)
+    # make the Zernike fit
+    # ---------------------------------
+    phase_zern = np.sum( [z[i] * basis_grid[i] for i in range(len(basis))], axis=0)
     
-    print '\n\n'
-    print 'Zernike coefficients'
-    print '--------------------'
-    print 'Noll index, weight'
-    for i in range(orders):
-        print i+1, z[i]
-
-    # get defocus and astigmatism 
-    # ---------------------------
-    # rescale y and x 
-    qy = y/(y[1]-y[0]) * dq[0]
-    qx = x/(x[1]-x[0]) * dq[1]
-    qy, qx = np.meshgrid(qy, qx, indexing='ij')
-    
-    # defocus
-    # -------
-    phi_df = - np.pi * wavelen * 1. * (qy**2 + qx**2)
-    z_df   = np.array( [np.sum(dA * b * phi_df) for b in basis_grid] )
-
-    # astigmatism x (or fs)
-    # ---------------------
-    phi_ax = - np.pi * wavelen * 1. * qx**2
-    z_ax   = np.array( [np.sum(dA * b * phi_ax) for b in basis_grid] )
-    
-    # astigmatism y (or ss)
-    # ---------------------
-    phi_ay = - np.pi * wavelen * 1. * qy**2
-    z_ay   = np.array( [np.sum(dA * b * phi_ay) for b in basis_grid] )
-
-    # tilt x (or fs)
-    # ---------------------
-    phi_tx = -2. * np.pi * 1. * qx
-    z_tx   = np.array( [np.sum(dA * b * phi_tx) for b in basis_grid] )
-
-    # tilt y (or ss)
-    # ---------------------
-    phi_ty = -2. * np.pi * 1. * qy
-    z_ty   = np.array( [np.sum(dA * b * phi_ty) for b in basis_grid] )
-
-    # these are weights |z| cos(theta), were theta is the angle b/w
-    # (say) z and z_df
-    defocus_w = np.sum( z_df * z ) / np.sqrt(np.sum(z_df**2))
-    astig_x_w = np.sum( z_ax * z ) / np.sqrt(np.sum(z_ax**2))
-    astig_y_w = np.sum( z_ay * z ) / np.sqrt(np.sum(z_ay**2))
-    tilt_x_w  = np.sum( z_tx * z ) / np.sqrt(np.sum(z_tx**2))
-    tilt_y_w  = np.sum( z_ty * z ) / np.sqrt(np.sum(z_ty**2))
-
-    print '\n\n'
-    print 'Zernike weights'
-    print '---------------'
-    print 'defocus       :', defocus_w
-    print 'astigmatism fs:', astig_x_w
-    print 'astigmatism ss:', astig_y_w
-    print 'tilt fs       :', tilt_x_w
-    print 'tilt ss       :', tilt_y_w
-    
-    # dividing again by |z_df| gives the multiples of z_df in z
-    defocus = defocus_w / np.sqrt(np.sum(z_df**2))
-    astig_x = astig_x_w / np.sqrt(np.sum(z_ax**2))
-    astig_y = astig_y_w / np.sqrt(np.sum(z_ay**2))
-    tilt_x  = tilt_x_w  / np.sqrt(np.sum(z_tx**2))
-    tilt_y  = tilt_y_w  / np.sqrt(np.sum(z_ty**2))
-    
-    print '\n\n'
-    print 'Geometric aberrations'
-    print '---------------------'
-    print 'defocus       :', defocus, '(m) (+ve is overfocus)'
-    print 'astigmatism fs:', astig_x, '(m)'
-    print 'astigmatism ss:', astig_y, '(m)'
-    print 'tilt fs       :', tilt_x, '(rad) relative to centre of roi'
-    print 'tilt ss       :', tilt_y, '(rad) relative to centre of roi'
-    
-    if params['Zernike']['remove_tilt'] is True :
-        #tilt_x_phi = tilt_x * np.sum(np.array([z_tx[i] * basis_grid[i] for i in range(orders)]), axis=0)
-        #tilt_y_phi = tilt_y * np.sum(np.array([z_ty[i] * basis_grid[i] for i in range(orders)]), axis=0)
-        tilt_x_phi = z[1] * basis_grid[1]
-        tilt_y_phi = z[2] * basis_grid[2]
-        phase -= tilt_x_phi 
-        phase -= tilt_y_phi 
-
-    if params['Zernike']['remove_pedestal'] is True :
-        pedestal_phi =  z[0] * basis_grid[0]
-        phase       -= pedestal_phi 
-
-    if params['Zernike']['remove_defocus'] is True :
-        #defocus_phi = defocus * np.sum(np.array([z_df[i] * basis_grid[i] for i in range(orders)]), axis=0)
-        defocus_phi = z[3] * basis_grid[3]
-        phase      -= defocus_phi 
-
-    if params['Zernike']['remove_astigmatism'] is True :
-        #astig_x_phi = astig_x * np.sum(np.array([z_ax[i] * basis_grid[i] for i in range(orders)]), axis=0)
-        #astig_y_phi = astig_y * np.sum(np.array([z_ay[i] * basis_grid[i] for i in range(orders)]), axis=0)
-        astig_x_phi = z[4] * basis_grid[4]
-        astig_y_phi = z[5] * basis_grid[5]
-        phase -= astig_x_phi 
-        phase -= astig_y_phi 
-
     phase_full = f[params['Zernike']['phase']][()]
     phase_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = phase
     
+    phase_zern_full = f[params['Zernike']['phase']][()]
+    phase_zern_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = phase_zern
+
+
+    # get the focus spot
+    if W is not None :
+        pupil = W * np.exp(1J * phase)
+        P_focus = get_focus_probe(pupil)
+
     # write the result 
     ##################
     if params['Zernike']['output_file'] is not None :
@@ -267,19 +328,31 @@ if __name__ == '__main__':
         print g.keys()
         g.create_group(group)
     
-    # pupil
+    # focus probe
+    key = params['Zernike']['h5_group']+'/probe_focus'
+    if key in g :
+        del g[key]
+    g[key] = P_focus
+
+    # phase
     key = params['Zernike']['h5_group']+'/phase'
     if key in g :
         del g[key]
     g[key] = phase_full
 
-    # phase
+    # Zernike fit to the phase
+    key = params['Zernike']['h5_group']+'/Zernike_phase_fit'
+    if key in g :
+        del g[key]
+    g[key] = phase_zern_full
+
+    # Zernike coefficients
     key = params['Zernike']['h5_group']+'/Zernike_coefficients'
     if key in g :
         del g[key]
     g[key] = z
 
-    # aberration
+    # Zernike basis functions
     key = params['Zernike']['h5_group']+'/Zernike_basis_vectors'
     if key in g :
         del g[key]

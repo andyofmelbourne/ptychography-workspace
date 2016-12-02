@@ -320,12 +320,12 @@ if __name__ == '__main__':
         g = f
         outputdir = os.path.split(args.filename)[0]
     
-    key = params['stitch']['h5_group']+'/O_stitch'
+    key = params['stitch']['h5_group']+'/O'
     if key in g :
         del g[key]
     g[key] = O.astype(np.complex128)
     
-    key = params['stitch']['h5_group']+'/whitefield_stitch'
+    key = params['stitch']['h5_group']+'/whitefield'
     if key in g :
         del g[key]
     g[key] = W

@@ -99,7 +99,7 @@ class Cpu_stitcher():
         i, j = slice(data.shape[1]//2+1,3*data.shape[1]//2+1,1), slice(data.shape[2]//2+1,3*data.shape[2]//2+1,1)
         return Os, i, j
 
-    def speckle_tracking_update(self, steps=8, window=16, search_window=50, max_iters=20, min_overlap=3, median_filter=None, polyfit_order=None):
+    def speckle_tracking_update(self, steps=8, window=16, search_window=50, max_iters=20, min_overlap=3, median_filter=None, polyfit_order=None, update_pos=False):
         from multiprocessing import Pool
         import itertools
           
@@ -146,8 +146,22 @@ class Cpu_stitcher():
 
             print 'workers are done'
             nccs = np.array([i[1] for i in res])
-            di   = np.array([i[0][0] - np.mean(i[0][0]) for i in res])
-            dj   = np.array([i[0][1] - np.mean(i[0][1]) for i in res])
+            di   = np.array([i[0][0] for i in res], dtype=np.float)
+            dj   = np.array([i[0][1] for i in res], dtype=np.float)
+            
+            dri = np.mean(di, axis=(1,2))
+            drj = np.mean(dj, axis=(1,2))
+            for i in range(di.shape[0]):
+                di[i, :, :]  -= dri[i]
+                dj[i, :, :]  -= drj[i]
+            
+            if update_pos :
+                self.R[:, 0] -= np.rint(100 * dri).astype(np.int)
+                self.R[:, 1] -= np.rint(100 * drj).astype(np.int)
+                print 'updating sample positions:'
+                print 'Delta R (pixels):'
+                print np.rint(100 * dri).astype(np.int)
+                print np.rint(100 * drj).astype(np.int)
             
             print nccs.shape, di.shape, dj.shape
             # do a weigted sum
@@ -163,6 +177,9 @@ class Cpu_stitcher():
             if polyfit_order is not None :
                 coeff, X_ij[0] = polyfit2d(X_ij[0], np.ones_like(X_ij[0], dtype=np.bool), polyfit_order)
                 coeff, X_ij[1] = polyfit2d(X_ij[1], np.ones_like(X_ij[1], dtype=np.bool), polyfit_order)
+            
+            X_ij[0] -= np.mean(X_ij[0])
+            X_ij[1] -= np.mean(X_ij[1])
             
             errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
             print 'Error:', errors[-1]
@@ -542,7 +559,8 @@ if __name__ == '__main__':
                                                                     max_iters=params['cpu_stitch']['max_iters'], \
                                                                     min_overlap=params['cpu_stitch']['min_overlap'], \
                                                                     median_filter=params['cpu_stitch']['median_filter'], \
-                                                                    polyfit_order=params['cpu_stitch']['polyfit_order'])
+                                                                    polyfit_order=params['cpu_stitch']['polyfit_order'], \
+                                                                    update_pos=params['cpu_stitch']['update_positions'])
     else :
         print 'stitching...'
         Os       = [cpu_stitcher.inverse_map(cpu_stitcher.X_ij)]
@@ -616,6 +634,7 @@ if __name__ == '__main__':
         print g.keys()
         g.create_group(group)
 
+    print '\nwriting to file:'
     # pupil
     key = params['cpu_stitch']['h5_group']+'/pupil'
     if key in g :

@@ -1088,7 +1088,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.imageView = pg.ImageView(view = frame_plt)
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
-        self.stitch_path = config_dict['stitch']['h5_group']+'/O_stitch'
+        self.stitch_path = config_dict['stitch']['h5_group']+'/O'
         #self.R_path = config_dict['stitch']['h5_group']+'/R'
         self.im_init = False
         if self.stitch_path in self.f :

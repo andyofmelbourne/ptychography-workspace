@@ -16,8 +16,8 @@ import ConfigParser
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
 
-sys.path.append(os.path.join(root, 'utils'))
-sys.path.append(os.path.join(root, 'process'))
+sys.path.insert(1, os.path.join(root, 'utils'))
+sys.path.insert(1, os.path.join(root, 'process'))
 
 from Ptychography import utils
 

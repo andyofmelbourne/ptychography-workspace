@@ -66,18 +66,25 @@ class Cpu_stitcher():
             self.Od[k] =  self.O[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] 
         return self.Od
     
-    def inverse_map(self, X_ij):
+    def inverse_map(self, X_ij, IW_weights=None):
         self.O.fill(0)
         self.WWmap.fill(0)
+        
+        if IW_weights is None :
+            IW_weights = np.ones_like(self.IW, dtype=np.bool)
+        
         for k in range(self.IW.shape[0]):
-            self.O[    self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.IW[k]
-            self.WWmap[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] += self.WW
+            ss = self.i + X_ij[0] - self.R[k][0]
+            fs = self.j + X_ij[1] - self.R[k][1]
+            mask = (ss > 0) * (ss < self.O.shape[0]) * (fs > 0) * (fs < self.O.shape[1])
+            self.O[    ss[mask], fs[mask]] += self.IW[k][mask] * IW_weights[k][mask]
+            self.WWmap[ss[mask], fs[mask]] += self.WW[mask] * IW_weights[k][mask]
         self.O /= (self.WWmap + 1.0e-5)
         self.O[self.O==0] = 1.
         return self.O
     
-    def calc_error(self, X_ij):
-        self.O       = self.inverse_map(X_ij)
+    def calc_error(self, X_ij, IW_weights=None):
+        self.O       = self.inverse_map(X_ij, IW_weights=None)
         self.Od      = self.forward_map(X_ij)
         
         # sum |sqrt(I) - sqrt(I_forward)|^2
@@ -93,7 +100,10 @@ class Cpu_stitcher():
         i    -= self.IW.shape[1] * (pad - 1)//2 + 1
         j    -= self.IW.shape[2] * (pad - 1)//2 + 1
         for k in range(self.IW.shape[0]):
-            Os[k] =  O[i - self.R[k][0], j - self.R[k][1]] 
+            ss = i - self.R[k][0]
+            fs = j - self.R[k][1]
+            mask = (ss > 0) * (ss < shape[1]) * (fs > 0) * (fs < shape[2])
+            Os[k][mask] =  O[ss[mask], fs[mask]] 
          
         # return the slice objects such that Od[k] = Os[k][i, j]
         i, j = slice(data.shape[1]//2+1,3*data.shape[1]//2+1,1), slice(data.shape[2]//2+1,3*data.shape[2]//2+1,1)
@@ -149,20 +159,23 @@ class Cpu_stitcher():
             di   = np.array([i[0][0] for i in res], dtype=np.float)
             dj   = np.array([i[0][1] for i in res], dtype=np.float)
             
+            # remove constant offsets
             dri = np.mean(di, axis=(1,2))
             drj = np.mean(dj, axis=(1,2))
             for i in range(di.shape[0]):
                 di[i, :, :]  -= dri[i]
                 dj[i, :, :]  -= drj[i]
             
+            # update positions if unknown (dangerous)
             if update_pos :
-                self.R[:, 0] -= np.rint(100 * dri).astype(np.int)
-                self.R[:, 1] -= np.rint(100 * drj).astype(np.int)
+                self.R[:, 0] -= np.rint(1 * dri).astype(np.int)
+                self.R[:, 1] -= np.rint(1 * drj).astype(np.int)
                 print 'updating sample positions:'
                 print 'Delta R (pixels):'
                 print np.rint(100 * dri).astype(np.int)
                 print np.rint(100 * drj).astype(np.int)
             
+            # Merge and smooth pixel displacements
             print nccs.shape, di.shape, dj.shape
             # do a weigted sum
             norm = np.sum(nccs, axis=0) + 1.0e-10
@@ -175,13 +188,16 @@ class Cpu_stitcher():
                 X_ij[1] = medfilt2d(X_ij[1], median_filter)
             
             if polyfit_order is not None :
-                coeff, X_ij[0] = polyfit2d(X_ij[0], np.ones_like(X_ij[0], dtype=np.bool), polyfit_order)
-                coeff, X_ij[1] = polyfit2d(X_ij[1], np.ones_like(X_ij[1], dtype=np.bool), polyfit_order)
+                C_mask = (norm - np.mean(norm)) < np.std(norm)
+                coeff, X_ij[0] = polyfit2d(X_ij[0], C_mask, order_ss=polyfit_order)
+                coeff, X_ij[1] = polyfit2d(X_ij[1], C_mask, order_fs=polyfit_order)
             
+            # Remove residual constant offsets
             X_ij[0] -= np.mean(X_ij[0])
             X_ij[1] -= np.mean(X_ij[1])
             
-            errors.append(self.calc_error(np.rint(X_ij).astype(np.int)))
+            # Calculate sum squared error
+            errors.append(self.calc_error(np.rint(X_ij).astype(np.int), IW_weights = nccs))
             print 'Error:', errors[-1]
             
             if errors[-1] > errors[-2] and ii > 0 :
@@ -190,7 +206,7 @@ class Cpu_stitcher():
             Os.append(self.O.copy())
             deltas.append(X_ij.copy())
         
-        return X_ij, np.array(Os), np.array(errors)
+        return X_ij, np.array(Os), np.array(errors), norm
 
 def feature_map_cython_wrap(x):
     return utils.feature_map_cython(*x)
@@ -295,14 +311,14 @@ def feature_map(Od, O, X_ij, mask, i, j, window=10, search_window=20, steps=1, o
             plt.show()
     return X_ij_new, ncc
 
-def polyfit2d(Z, mask, order):
+def polyfit2d(Z, mask, order_ss=1, order_fs=1):
     print 'setting up A and B matrices...'
     A   = []
-    mat = np.zeros((order, order), dtype=np.float)
+    mat = np.zeros((order_ss, order_fs), dtype=np.float)
     i = np.linspace(-1, 1, mask.shape[0])
     j = np.linspace(-1, 1, mask.shape[1])
-    for ii in range(order):
-        for jj in range(order):
+    for ii in range(order_ss):
+        for jj in range(order_fs):
             mat.fill(0)
             mat[ii, jj] = 1
             A.append(P.polygrid2d(i, j, mat)[mask])
@@ -313,7 +329,7 @@ def polyfit2d(Z, mask, order):
     print 'sending to np.linalg.lstsq ...'
     coeff, r, rank, s = np.linalg.lstsq(A, B)
     print 'residual:', r
-    coeff = coeff.reshape((order, order))
+    coeff = coeff.reshape((order_ss, order_fs))
     # return the coefficients and the fit
     fit = P.polygrid2d(i, j, coeff)
     return coeff, fit
@@ -399,7 +415,7 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     phi  = (phi.T + phi_y[:, 0].T).T 
     phi /= 2.
 
-    phase = - 2. * np.pi / lamb * phi
+    phase = 2. * np.pi / lamb * phi
     return phi, phase
 
 def get_focus_probe(P):
@@ -420,8 +436,8 @@ def get_sample_plane_probe(p, lamb, z, du, df):
     P2 = np.roll(P2, p.shape[0]//2, 0)
     P2 = np.roll(P2, p.shape[1]//2, 1)
     
-    dq = (z / df) / (du * np.array(P2.shape))
-
+    dq = (z / df) / (du * np.array(p.shape))
+    
     i = np.fft.fftfreq(P2.shape[0], 1/float(P2.shape[0])) * dq[0]
     j = np.fft.fftfreq(P2.shape[1], 1/float(P2.shape[1])) * dq[1]
     i, j = np.meshgrid(i, j, indexing='ij')
@@ -431,12 +447,6 @@ def get_sample_plane_probe(p, lamb, z, du, df):
     P3 = np.fft.ifftn(np.fft.fftn( P2 ) * exp.conj())
     
     return P3
-
-
-def fit_Zernike_poly(phi):
-    """
-    """
-    pass
 
 
 def parse_cmdline_args():
@@ -553,7 +563,7 @@ if __name__ == '__main__':
     cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
 
     if params['cpu_stitch']['fit_grads'] :
-        delta_ij, Os, errors = cpu_stitcher.speckle_tracking_update(steps=params['cpu_stitch']['steps'], \
+        delta_ij, Os, errors, C_pear = cpu_stitcher.speckle_tracking_update(steps=params['cpu_stitch']['steps'], \
                                                                     window=params['cpu_stitch']['window'], \
                                                                     search_window=params['cpu_stitch']['search_window'], \
                                                                     max_iters=params['cpu_stitch']['max_iters'], \
@@ -565,6 +575,7 @@ if __name__ == '__main__':
         print 'stitching...'
         Os       = [cpu_stitcher.inverse_map(cpu_stitcher.X_ij)]
         errors   = [0]
+        C_pear   = None
 
     print 'Object Field of view:', np.array(Os[-1].shape) * dx
     print 'Object shape:        ', Os[-1].shape
@@ -635,6 +646,7 @@ if __name__ == '__main__':
         g.create_group(group)
 
     print '\nwriting to file:'
+    
     # pupil
     key = params['cpu_stitch']['h5_group']+'/pupil'
     if key in g :
@@ -675,7 +687,7 @@ if __name__ == '__main__':
     if len(errors) > 1 :
         key = params['cpu_stitch']['h5_group']+'/errors'
         if delta_from_file is True :
-            errors = [g[key][i] for i in range(g[key].shape[0])] + list(errors)
+            errors = [g[key][i] for i in range(g[key].shape[0])] + list(errors[1:])
         if key in g :
             del g[key]
         g[key] = np.array(errors)
@@ -684,7 +696,7 @@ if __name__ == '__main__':
     if len(Os) > 1:
         key = params['cpu_stitch']['h5_group']+'/Os'
         if delta_from_file is True :
-            Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os)  
+            Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os[1:])  
         if key in g :
             del g[key]
         g[key] = np.array(Os)
@@ -695,6 +707,13 @@ if __name__ == '__main__':
         del g[key]
     g[key] = delta_ij_full
     
+    # Pearson coefficients 
+    if C_pear is not None :
+        key = params['cpu_stitch']['h5_group']+'/C_pearson'
+        if key in g :
+            del g[key]
+        g[key] = C_pear
+
     # object
     key = params['cpu_stitch']['h5_group']+'/O'
     if key in g :

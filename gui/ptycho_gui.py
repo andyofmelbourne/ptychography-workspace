@@ -34,6 +34,7 @@ from widgets import config_default
 from widgets import Show_h5_list_widget
 from widgets import View_h5_data_widget
 from widgets import Test_run_command_widget
+from widgets import Zernike_widget
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -111,6 +112,13 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.tabs.append( Show_cpu_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "stitch with pixel shifts")
         
+        # Show gpu stitch tab
+        #####################
+        # load the default config file
+        params = load_config(filename, name='Zernike.ini')
+        self.tabs.append( Zernike_widget(filename, params) )
+        self.addTab(self.tabs[-1], "Zernike decomposition widget")
+
         # mask Maker tab
         ################
         self.tabs.append( Mask_maker_widget(filename, config_default['output'] + '/mask', filename, config_default['output'] + '/mask') )

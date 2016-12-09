@@ -843,26 +843,13 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
         
         # Zernike plot
         #############
-        R = f[config_default['input']['R']]
-        X = R[:, 0]
-        Y = R[:, 1]
-        title = 'realspace x (red) and y (green) sample positions in pixel units'
-        position_plotsW = pg.PlotWidget(bottom='frame number', left='position', title = title)
-        position_plotsW.plot(X, pen=(255, 150, 150))
-        position_plotsW.plot(Y, pen=(150, 255, 150))
-
-        frame_plt = pg.PlotItem(title = 'Stitch with pixel shifts')
-        self.imageView = pg.ImageView(view = frame_plt)
-        self.imageView.ui.menuBtn.hide()
-        self.imageView.ui.roiBtn.hide()
-        self.stitch_path = config_dict['cpu_stitch']['h5_group']+'/O'
-        #self.R_path = config_dict['stitch']['h5_group']+'/R'
-        self.im_init = False
-        if self.stitch_path in self.f :
-            print(self.f[self.stitch_path].shape)
-            t = self.f[self.stitch_path].value.T.real
-            self.imageView.setImage(t)
-            self.im_init = True
+        self.z_path = config_dict['Zernike']['h5_group']+'/Zernike_coefficients'
+        title    = 'Zernike polynomial coefficients'
+        self.z_plotsW = pg.PlotWidget(bottom='Noll index', left='coefficient', title = title)
+         
+        if self.z_path in self.f:
+            z = self.f[self.z_path][()]
+            self.z_plotsW.plot(z, pen=(255, 150, 150))
         self.f.close()
         
         # config widget
@@ -884,7 +871,7 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
         
         # set the layout
         ################
-        layout.addWidget(self.imageView,           0, 1, 5, 1)
+        layout.addWidget(self.z_plotsW,            0, 1, 5, 1)
         layout.addWidget(self.config_widget,       0, 0, 1, 1)
         layout.addWidget(self.run_button,          1, 0, 1, 1)
         #layout.addWidget(self.ref_button,          2, 0, 1, 1)
@@ -903,20 +890,16 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
     
         # Run the command 
         #################
-        py = os.path.join(root, 'process/cpu_stitch.py')
+        py = os.path.join(root, 'process/Zernike.py')
         cmd = 'python ' + py + ' ' + self.filename + ' -c ' + self.config_filename
         self.run_command_widget.run_cmd(cmd)
     
     def finished(self):
         self.f = h5py.File(self.filename, 'r')
-        print(self.stitch_path)
-        t = self.f[self.stitch_path].value.T.real
-        if self.im_init :
-            self.imageView.setImage(t, autoRange = False, autoLevels = False, autoHistogramRange = False)
-            self.im_init = True
-        else :
-            self.imageView.setImage(t)
-            self.im_init = True
+        print(self.z_path)
+        plotitem = self.z_plotsW.getPlotItem()
+        plotitem.clear()
+        plotitem.plot(self.f[self.z_path][()])
         self.f.close()
 
 class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):

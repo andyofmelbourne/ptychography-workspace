@@ -312,8 +312,11 @@ if __name__ == '__main__':
 
     # get the focus spot
     if W is not None :
+        print '\ncalculating focus...'
         pupil = W * np.exp(1J * phase)
         P_focus = get_focus_probe(pupil)
+        print 'Real space pixel size   :', 1./ (np.array(P_focus.shape) * dq)
+        print 'Real space Field-of-view:', 1./ dq
 
     # write the result 
     ##################

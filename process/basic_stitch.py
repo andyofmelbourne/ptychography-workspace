@@ -60,7 +60,7 @@ root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
 
 sys.path.append(root)
-#sys.path.append(os.path.join(root, 'utils'))
+sys.path.append(os.path.join(root, 'utils'))
 sys.path.append(os.path.join(root, 'process'))
 
 import Ptychography.ptychography.era as era
@@ -240,13 +240,13 @@ if __name__ == '__main__':
     if params['stitch']['roi'] is not None :
         ROI = params['stitch']['roi']
     else :
-        ROI = [0, f['entry_1/data_1/data'].shape[0], 0, f['entry_1/data_1/data'].shape[1]]
+        ROI = [0, f['entry_1/data_1/data'].shape[1], 0, f['entry_1/data_1/data'].shape[2]]
     
     # frames
     # ------------------
     # get the frames to process
-    if 'good_frames' in f[group] :
-        good_frames = list(f[group]['good_frames'][()])
+    if 'process_3/good_frames' in f :
+        good_frames = list(f['process_3/good_frames'][()])
     else :
         good_frames = range(f['entry_1/data_1/data'].shape[0])
     
@@ -298,6 +298,8 @@ if __name__ == '__main__':
         mask = f[params['stitch']['mask']].value
     mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
 
+    f.close()
+
     #####################
     # Refine O and W
     #####################
@@ -308,9 +310,11 @@ if __name__ == '__main__':
         P *= a
         O /= a
 
+    f = h5py.File(args.filename)
+
     W = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
     W[ROI[0]:ROI[1], ROI[2]:ROI[3]] = P[:].real
-    
+     
     # write the result 
     ##################
     if params['stitch']['output_file'] is not None :
@@ -320,6 +324,11 @@ if __name__ == '__main__':
         g = f
         outputdir = os.path.split(args.filename)[0]
     
+    group = params['stitch']['h5_group']
+    if group not in g:
+        print g.keys()
+        g.create_group(group)
+
     key = params['stitch']['h5_group']+'/O'
     if key in g :
         del g[key]

@@ -160,8 +160,10 @@ class Cpu_stitcher():
             dj   = np.array([i[0][1] for i in res], dtype=np.float)
             
             # remove constant offsets
-            dri = np.mean(di, axis=(1,2))
-            drj = np.mean(dj, axis=(1,2))
+            #dri = np.mean(di, axis=(1,2))
+            #drj = np.mean(dj, axis=(1,2))
+            dri = np.array( [np.mean(di[i][offset_i[i]::steps, offset_j[i]::steps]) for i in range(frames.shape[0])] )
+            drj = np.array( [np.mean(dj[i][offset_i[i]::steps, offset_j[i]::steps]) for i in range(frames.shape[0])] )
             for i in range(di.shape[0]):
                 di[i, :, :]  -= dri[i]
                 dj[i, :, :]  -= drj[i]
@@ -172,8 +174,8 @@ class Cpu_stitcher():
                 self.R[:, 1] -= np.rint(1 * drj).astype(np.int)
                 print 'updating sample positions:'
                 print 'Delta R (pixels):'
-                print np.rint(100 * dri).astype(np.int)
-                print np.rint(100 * drj).astype(np.int)
+                print np.rint(1 * dri).astype(np.int)
+                print np.rint(1 * drj).astype(np.int)
             
             # Merge and smooth pixel displacements
             print nccs.shape, di.shape, dj.shape
@@ -559,6 +561,8 @@ if __name__ == '__main__':
     else :
         delta_from_file = False
         delta_ij    = None
+
+    f.close()
     
     cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
 
@@ -580,6 +584,15 @@ if __name__ == '__main__':
     print 'Object Field of view:', np.array(Os[-1].shape) * dx
     print 'Object shape:        ', Os[-1].shape
     print 'Virtual Pixel size:  ', dx
+
+    f = h5py.File(args.filename)
+    
+    # Convert sample coordinates from pixels to meters
+    ##################################################
+    if params['cpu_stitch']['update_positions'] :
+        R_out = utils.get_Fresnel_pixel_shifts_cxi_inverse(cpu_stitcher.R, f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
+    else : 
+        R_out = None
 
     # get the phase
     ###############
@@ -647,6 +660,13 @@ if __name__ == '__main__':
 
     print '\nwriting to file:'
     
+    # Positions
+    if params['cpu_stitch']['update_positions'] :
+        key = params['cpu_stitch']['h5_group']+'/R'
+        if key in g :
+            del g[key]
+        g[key] = R_out
+
     # pupil
     key = params['cpu_stitch']['h5_group']+'/pupil'
     if key in g :

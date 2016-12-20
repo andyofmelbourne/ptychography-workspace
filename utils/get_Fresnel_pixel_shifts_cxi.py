@@ -8,7 +8,7 @@ def get_Fresnel_pixel_shifts_cxi(f, good_frames=None, df=None, offset_to_zero=Tr
     wavelen = sc.h * sc.c / E
     
     if good_frames is None :
-        good_frames = list(f['/entry_1/data_1/data'].shape[0])
+        good_frames = range(f['/entry_1/data_1/data'].shape[0])
     
     b           = f['/entry_1/instrument_1/detector_1/basis_vectors'][good_frames]
     R           = f['/entry_1/sample_3/geometry/translation'][good_frames]
@@ -33,3 +33,43 @@ def get_Fresnel_pixel_shifts_cxi(f, good_frames=None, df=None, offset_to_zero=Tr
         R_ss_fs[:, 0] -= np.max(R_ss_fs[:, 0])
         R_ss_fs[:, 1] -= np.max(R_ss_fs[:, 1])
     return R_ss_fs, (df / z) * du
+
+def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, offset_to_zero=True):
+    du = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
+    z  = f['/entry_1/instrument_1/detector_1/distance'][()]
+    E  = f['/entry_1/instrument_1/source_1/energy'][()]
+    wavelen = sc.h * sc.c / E
+    
+    if good_frames is None :
+        good_frames = range(f['/entry_1/data_1/data'].shape[0])
+    
+    b           = f['/entry_1/instrument_1/detector_1/basis_vectors'][good_frames]
+    R           = f['/entry_1/sample_3/geometry/translation'][good_frames]
+
+    R_ss_fs_out = R_ss_fs.astype(np.float).copy()
+    
+    # un-offset
+    if offset_to_zero :
+        R_ss_fs0, dx = get_Fresnel_pixel_shifts_cxi(f, good_frames, df, offset_to_zero = False)
+        R_ss_fs_out[:, 0] -= np.max(R_ss_fs_out[:, 0])
+        R_ss_fs_out[:, 1] -= np.max(R_ss_fs_out[:, 1])
+        
+        R_ss_fs_out[:, 0] += np.max(R_ss_fs0[:, 0])
+        R_ss_fs_out[:, 1] += np.max(R_ss_fs0[:, 1])
+    
+    # un-scale
+    R_ss_fs_out *= (df / z) * du
+    
+    # unfortunately we cannot invert from pixel shifts to xyz 
+    # this is only possible if the detector lies in the xy plane
+    R_ss_fs_out *= du
+    
+    #print('\ninverting from sample coords to detector coords:')
+    for i in range(R_ss_fs_out.shape[0]):
+        Ri, r, rank, s = np.linalg.lstsq(b[i][:, :2], R_ss_fs_out[i])
+        R[good_frames[i]][:2] = Ri
+        #print(R_ss_fs_out[i], '-->', Ri)
+    
+    return R
+
+

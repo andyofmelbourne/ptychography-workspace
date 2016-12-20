@@ -1474,6 +1474,25 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         spots = [{'pos': [X[i], Y[i]], 'data': i} for i in range(len(R))] 
         self.s1.addPoints(spots)
 
+        # Temp
+        ######
+        if 'process_3/cpu_stitch/R' in f :
+            R = f['process_3/cpu_stitch/R']
+            X2 = R[:, 0]
+            Y2 = R[:, 1]
+            self.X2 = X2
+            self.Y2 = Y2
+            
+            # scatter plot
+            ##############
+            self.good_frame_pen2     = pg.mkPen((150, 255, 150))
+            
+            self.s12    = pg.ScatterPlotItem(size=5, pen=self.good_frame_pen2, brush=pg.mkBrush(255, 255, 255, 120))
+            spots2 = [{'pos': [X2[i], Y2[i]], 'data': i} for i in range(len(R))] 
+            self.s12.addPoints(spots2)
+        else :
+            self.s12 = None
+
         ## Make all plots clickable
         def clicked(plot, points):
             for p in points:
@@ -1511,6 +1530,9 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         scatter_plot.addItem(self.roi)
         scatter_plot.addItem(self.s1)
         scatter_plot.addItem(self.s2)
+
+        if self.s12 is not None :
+            scatter_plot.addItem(self.s12)
         
         hbox = PyQt4.QtGui.QHBoxLayout()
         hbox.addWidget(ROI_button_good)

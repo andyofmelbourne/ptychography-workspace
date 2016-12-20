@@ -245,8 +245,8 @@ if __name__ == '__main__':
     # frames
     # ------------------
     # get the frames to process
-    if 'good_frames' in f[group] :
-        good_frames = list(f[group]['good_frames'][()])
+    if 'good_frames' in f['process_3'] :
+        good_frames = list(f['process_3']['good_frames'][()])
     else :
         good_frames = range(f['entry_1/data_1/data'].shape[0])
     

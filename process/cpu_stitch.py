@@ -37,11 +37,6 @@ class Cpu_stitcher():
         self.R[:, 0] -= data.shape[1]//2
         self.R[:, 1] -= data.shape[2]//2
         
-        if O is None :
-            self.O  = O
-        else :
-            self.O  = O
-        
         # the regular pixel values
         self.i, self.j = np.indices(self.IW.shape[1 :])
 
@@ -63,7 +58,11 @@ class Cpu_stitcher():
     
     def forward_map(self, X_ij):
         for k in range(self.IW.shape[0]):
-            self.Od[k] =  self.O[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] 
+            ss = self.i + X_ij[0] - self.R[k][0]
+            fs = self.j + X_ij[1] - self.R[k][1]
+            mask = (ss > 0) * (ss < self.O.shape[0]) * (fs > 0) * (fs < self.O.shape[1])
+            
+            self.Od[k][mask] =  self.O[ss[mask], fs[mask]]#[self.i + X_ij[0] - self.R[k][0], self.j + X_ij[1] - self.R[k][1]] 
         return self.Od
     
     def inverse_map(self, X_ij, IW_weights=None):

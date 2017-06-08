@@ -172,6 +172,7 @@ def OP_sup(I, R, whitefield, O, mask, iters=4):
         #              V = K + R[:, 1].max() - R[:, 1].min()
         shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
                  I.shape[2] + R[:, 1].max() - R[:, 1].min())
+        print(shape)
         O = np.ones(shape, dtype = np.float64)
         print 'O.shape', O.shape
 
@@ -264,6 +265,8 @@ if __name__ == '__main__':
     # ------------------
     # get the pixel shift coordinates along ss and fs
     R, du = utils2.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['stitch']['defocus'], offset_to_zero=True)
+    print(R)
+    print(du)
     
     # allow for astigmatism
     if params['stitch']['defocus_fs'] is not None :

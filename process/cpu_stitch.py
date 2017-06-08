@@ -184,9 +184,13 @@ class Cpu_stitcher():
             X_ij[1] += np.sum(dj*nccs, axis=0) / norm
 
             if median_filter is not None :
-                from scipy.signal import medfilt2d
-                X_ij[0] = medfilt2d(X_ij[0], median_filter)
-                X_ij[1] = medfilt2d(X_ij[1], median_filter)
+                #from scipy.signal import medfilt2d
+                #X_ij[0] = medfilt2d(X_ij[0], median_filter)
+                #X_ij[1] = medfilt2d(X_ij[1], median_filter)
+                import scipy.ndimage.filters
+                from scipy.ndimage.filters import gaussian_filter
+                X_ij[0] = gaussian_filter(X_ij[0], median_filter)
+                X_ij[1] = gaussian_filter(X_ij[1], median_filter)
             
             if polyfit_order is not None :
                 C_mask = (norm - np.mean(norm)) < np.std(norm)
@@ -336,7 +340,7 @@ def polyfit2d(Z, mask, order_ss=1, order_fs=1):
     return coeff, fit
 
 
-def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
+def pixel_shifts_to_phase_old(ss_shifts, fs_shifts, dx, du, df, lamb, z):
     """
     ss_shifts[i, j] = i - i_O
     fs_shifts[i, j] = j - j_O
@@ -389,11 +393,10 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     
     phase : 2D numpy array
         The phase of the pupil as defined in (2). 
-    """
     # -----------------------------------------------------
     # convert the pixel shifts to angles (radians)
-    #   - anglex_[i, j] = arctan(fs_shifts_[i, j] * dx / df) 
-    #   - angley_[i, j] = arctan(ss_shifts_[i, j] * dx / df) 
+    #   - anglex_[i, j] = arctan(fs_shifts_[i, j] * dx / z) 
+    #   - angley_[i, j] = arctan(ss_shifts_[i, j] * dx / z) 
     # -----------------------------------------------------
     angley = np.arctan2(ss_shifts * dx[0], df)
     anglex = np.arctan2(fs_shifts * dx[1], df)
@@ -417,7 +420,31 @@ def pixel_shifts_to_phase(ss_shifts, fs_shifts, dx, df, lamb):
     phi /= 2.
 
     phase = 2. * np.pi / lamb * phi
-    return phi, phase
+    """
+    phi_y = du * np.pi / lamb * np.cumsum(ss_shifts, axis=0, dtype=np.float)
+    phi_x = du * np.pi / lamb * np.cumsum(fs_shifts, axis=1, dtype=np.float)
+    
+    # this is because broadcasting is performed along the last dimension
+    phi = phi_y + phi_x + phi_x[0, :]
+    phi  = (phi.T + phi_y[:, 0].T).T 
+    phi /= 2.
+    
+    ab = phi / (2. * np.pi / lamb)
+    return ab, phi
+
+def pixel_shifts_to_phase(delta_ij, z, du, lamb, df):
+    phi_y = 2 * df * du**2 * np.pi / (lamb * z) * np.cumsum(delta_ij[0], axis=0, dtype=np.float)
+    phi_x = 2 * df * du**2 * np.pi / (lamb * z) * np.cumsum(delta_ij[1], axis=1, dtype=np.float)
+    
+    # this is because broadcasting is performed along the last dimension
+    phi = phi_y + phi_x + phi_x[0, :]
+    phi  = (phi.T + phi_y[:, 0].T).T 
+    phi /= 2.
+
+    #phi -= phi[delta_ij.shape[1]//2, delta_ij.shape[2]//2]
+    
+    ab = phi / (2. * np.pi / lamb)
+    return -ab, -phi
 
 def get_focus_probe(P):
     # zero pad
@@ -482,6 +509,56 @@ def parse_cmdline_args():
     params = Putils.parse_parameters(config)
     
     return args, params
+
+def fill_pixel_shifts_from_edge(delta_ij):
+    """
+    assume delta_ij is zero outside a rectangular region
+    """
+    out = delta_ij.copy()
+    # find the bottom edge
+    bot = 0
+    for i in range(out.shape[1]):
+        if np.any(np.abs(delta_ij[0][i]) > 0):
+            bot = i
+            break
+    # find the top edge
+    top = out.shape[1]-1
+    for i in range(top, 0, -1):
+        if np.any(np.abs(delta_ij[0][i]) > 0):
+            top = i
+            break
+    # find the left edge
+    left = 0
+    for i in range(out.shape[2]):
+        if np.any(np.abs(delta_ij[0][:,i]) > 0):
+            left = i
+            break
+    # find the right edge
+    right = out.shape[2]-1
+    for i in range(right, 0, -1):
+        if np.any(np.abs(delta_ij[0][:,i]) > 0):
+            right = i
+            break
+        
+    print('filling zero values in delta_ij')
+    print('edges at:', left, right, top, bot)
+    
+    for i in range(left):
+        out[0][:, i] = np.mean(delta_ij[0][:, left:left+4], axis=-1)
+        out[1][:, i] = np.mean(delta_ij[1][:, left:left+4], axis=-1)
+
+    for i in range(out.shape[2]-1, right, -1):
+        out[0][:, i] = np.mean(delta_ij[0][:, right-4:right], axis=-1)
+        out[1][:, i] = np.mean(delta_ij[1][:, right-4:right], axis=-1)
+
+    for i in range(bot):
+        out[0][i, :] = np.mean(delta_ij[0][bot:bot+4, :], axis=-2)
+        out[1][i, :] = np.mean(delta_ij[0][bot:bot+4, :], axis=-2)
+
+    for i in range(out.shape[1]-1, top, -1):
+        out[0][i, :] = np.mean(delta_ij[0][top-4:top, :], axis=-2)
+        out[1][i, :] = np.mean(delta_ij[1][top-4:top, :], axis=-2)
+    return out
 
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
@@ -557,12 +634,16 @@ if __name__ == '__main__':
         delta_ij    = f[params['cpu_stitch']['pixel_shifts']][()]
         delta_ij    = delta_ij[:, ROI[0]:ROI[1], ROI[2]:ROI[3]]
         delta_from_file = True
+
+        # if delta_ij is zero within the ROI then extend the pixel shifts by padding
+        delta_ij = fill_pixel_shifts_from_edge(delta_ij)
     else :
         delta_from_file = False
         delta_ij    = None
 
     f.close()
     
+    W *= mask
     cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
 
     if params['cpu_stitch']['fit_grads'] :
@@ -579,6 +660,8 @@ if __name__ == '__main__':
         Os       = [cpu_stitcher.inverse_map(cpu_stitcher.X_ij)]
         errors   = [0]
         C_pear   = None
+
+    
 
     print 'Object Field of view:', np.array(Os[-1].shape) * dx
     print 'Object shape:        ', Os[-1].shape
@@ -601,7 +684,7 @@ if __name__ == '__main__':
     E  = f['/entry_1/instrument_1/source_1/energy'][()]
     wavelen = sc.h * sc.c / E
     
-    aberrations, phase = pixel_shifts_to_phase(delta_ij[0], delta_ij[1], dx, df, wavelen)
+    aberrations, phase = pixel_shifts_to_phase(delta_ij, z, 75.0e-6, wavelen, df)
     pupil              = np.sqrt(W) * np.exp(1J * phase)
     
     # put back into det frame
@@ -714,7 +797,7 @@ if __name__ == '__main__':
     # object history
     if len(Os) > 1:
         key = params['cpu_stitch']['h5_group']+'/Os'
-        if delta_from_file is True :
+        if delta_from_file is True and key in g and Os.shape[1:] == g[key].shape[1:] :
             Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os[1:])  
         if key in g :
             del g[key]

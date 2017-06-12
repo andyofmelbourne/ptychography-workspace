@@ -604,8 +604,6 @@ if __name__ == '__main__':
     if params['cpu_stitch']['defocus_fs'] is not None :
         R[:, 1] *= df / params['cpu_stitch']['defocus_fs']
     
-    R = np.rint(R).astype(np.int)
-    
     # W
     # ------------------
     # get the whitefield
@@ -644,8 +642,31 @@ if __name__ == '__main__':
     f.close()
     
     W *= mask
-    cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
 
+    # apply rotation
+    if 'rot_degrees' in params['cpu_stitch'] and params['cpu_stitch']['rot_degrees'] is not None :
+        rot_rad = params['cpu_stitch']['rot_degrees'] * np.pi / 180.
+        A     = np.array([[np.cos(rot_rad), -np.sin(0.)], [np.sin(rot_rad), np.cos(0.)]])
+        #A_inv = np.array([[np.cos(tx), -np.sin(ty)], [np.sin(tx), np.cos(ty)]])
+        R2    = np.dot(A, R.T).T
+        
+        #dx' = A . (X + dx) - X
+        X_ij2     = delta_ij.copy() 
+        i, j      = np.indices(delta_ij.shape[1:])
+        X_ij2[0] += i
+        X_ij2[1] += j
+        
+        X_ij2 = np.dot(A, X_ij2.reshape((2, -1))).reshape(delta_ij.shape)
+        
+        X_ij2[0] -= i
+        X_ij2[1] -= j
+        
+        R2 = np.rint(R2).astype(np.int)
+        cpu_stitcher = Cpu_stitcher(data, mask, W, R2, None, X_ij2)
+    else :
+        R = np.rint(R).astype(np.int)
+        cpu_stitcher = Cpu_stitcher(data, mask, W, R, None, delta_ij)
+    
     if params['cpu_stitch']['fit_grads'] :
         delta_ij, Os, errors, C_pear = cpu_stitcher.speckle_tracking_update(steps=params['cpu_stitch']['steps'], \
                                                                     window=params['cpu_stitch']['window'], \
@@ -661,7 +682,6 @@ if __name__ == '__main__':
         errors   = [0]
         C_pear   = None
 
-    
 
     print 'Object Field of view:', np.array(Os[-1].shape) * dx
     print 'Object shape:        ', Os[-1].shape
@@ -684,7 +704,10 @@ if __name__ == '__main__':
     E  = f['/entry_1/instrument_1/source_1/energy'][()]
     wavelen = sc.h * sc.c / E
     
-    aberrations, phase = pixel_shifts_to_phase(delta_ij, z, 75.0e-6, wavelen, df)
+    if 'rot_degrees' in params['cpu_stitch'] and params['cpu_stitch']['rot_degrees'] is not None :
+        aberrations, phase = pixel_shifts_to_phase(X_ij2, z, 75.0e-6, wavelen, df)
+    else :
+        aberrations, phase = pixel_shifts_to_phase(delta_ij, z, 75.0e-6, wavelen, df)
     pupil              = np.sqrt(W) * np.exp(1J * phase)
     
     # put back into det frame

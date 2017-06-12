@@ -289,11 +289,12 @@ if __name__ == '__main__':
 
     # get defocus, astigmatism and tilt
     # ---------------------------------
-    phase = get_geometric_aberrations(phase, y, x, dq, wavelen, \
-            remove_piston      = params['Zernike']['remove_piston'], \
-            remove_tilt        = params['Zernike']['remove_tilt'], \
-            remove_astigmatism = params['Zernike']['remove_astigmatism'], \
-            remove_defocus     = params['Zernike']['remove_defocus'])
+    for i in range(10):
+        phase = get_geometric_aberrations(phase, y, x, dq, wavelen, \
+                remove_piston      = params['Zernike']['remove_piston'], \
+                remove_tilt        = params['Zernike']['remove_tilt'], \
+                remove_astigmatism = params['Zernike']['remove_astigmatism'], \
+                remove_defocus     = params['Zernike']['remove_defocus'])
     
     # calculate the Zernike again
     # ----------------------------------

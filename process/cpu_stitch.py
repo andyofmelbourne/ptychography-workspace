@@ -205,8 +205,8 @@ class Cpu_stitcher():
             errors.append(self.calc_error(np.rint(X_ij).astype(np.int), IW_weights = nccs))
             print 'Error:', errors[-1]
             
-            if errors[-1] > errors[-2] and ii > 0 :
-                break
+            #if errors[-1] > errors[-2] and ii > 0 :
+            #    break
             
             Os.append(self.O.copy())
             deltas.append(X_ij.copy())

@@ -56,11 +56,9 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
 
     import scipy.special
     if rank == 0 :
-        print('\n\ncalculating probabilities:')
+        print('\n\ncalculating probabilities...')
     
     for ii, i in enumerate(range((-search_window)//2, search_window//2, 1)):
-        if rank == 0 :
-            print(ii)
         for jj, j in enumerate(range((-search_window)//2, search_window//2, 1)):
             m = np.zeros(data.shape[1:], dtype=np.float)
             p = np.zeros(data.shape[1:], dtype=np.float)
@@ -90,7 +88,7 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     # P: log likelihood --> probability normalised over the shifts
     P   -= np.max(P, axis=0)
     P    = np.exp( P)
-
+    
     #P    = np.array( [no_wrap_smooth(p, mask, 10) for p in P] )
     # normalise
     psum = np.sum(P, axis=0)
@@ -108,10 +106,8 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     N    = np.zeros_like(I)
     
     if rank == 0 :
-        print('\n\nmerging:')
+        print('merging...')
     for k in range(data.shape[0]):
-        if rank == 0 :
-            print(k)
         for ii, i in enumerate(range((-search_window)//2, search_window//2, 1)):
             for jj, j in enumerate(range((-search_window)//2, search_window//2, 1)):
                 kk        = search_window*ii+jj
@@ -144,11 +140,6 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     #dy = np.rint(dy.astype(np.float)-dy_mean).astype(np.int)
     #dx = np.rint(dx.astype(np.float)-dx_mean).astype(np.int)
     
-    #Iout = np.roll(Iout, np.rint(dy_mean).astype(np.int), 0)
-    #Iout = np.roll(Iout, np.rint(dx_mean).astype(np.int), 1)
-    #dy = no_wrap_smooth(dy, np.ones_like(mask), 20)
-    #dx = no_wrap_smooth(dx, np.ones_like(mask), 20)
-        
     X_ij_out[0] += dy
     X_ij_out[1] += dx
     
@@ -251,7 +242,6 @@ def parse_cmdline_args():
 def prepare_input(dshape, R, O, X_ij):
     RO = np.rint(R).astype(np.int)
     
-    
     # the regular pixel values
     i, j = np.indices(dshape[1 :])
     
@@ -333,6 +323,54 @@ def downsample(data, mask, R, O, W, X_ij, factor = 2):
     X_ij_out = np.rint(X_ij_out.astype(np.float) / float(factor**3)).astype(np.int)
     return data_out, mask_out, R_out, O_out, W_out, X_ij_out
 
+def determine_edges(R, X_ij, search_window):
+    """
+    Find the R's for which any edge of any frame hits the edge
+    (0, 0) is the top left courner of the first frame
+    """
+    di, dj = np.indices(X_ij[0].shape)
+    RO     = np.rint(R).astype(np.int)
+    Oshape = (int(round(di.max() + np.max(np.abs(RO[:, 0])) )), \
+              int(round(dj.max() + np.max(np.abs(RO[:, 1])) )))
+    is_edge = np.zeros((len(R),), dtype=np.bool)
+    for k in range(R.shape[0]):
+        for i in [(-search_window)//2, search_window//2, 1]:
+            for j in [(-search_window)//2, search_window//2, 1]:
+                ss        = di + i - RO[k][0] + X_ij[0]
+                fs        = dj + j - RO[k][1] + X_ij[1]
+                sfmask    = (ss > 0) * (ss < Oshape[0]) * (fs > 0) * (fs < Oshape[0])
+                if np.any(~sfmask) :
+                    is_edge[k] = True
+    return is_edge
+    
+def unwrap_smooth(X_ij, smooth):
+    import skimage.restoration
+    
+    dx = X_ij[0].astype(np.float)
+    # rescale between -pi and pi
+    dxmin, dxmax = dx.min(), dx.max()
+    dx = (dx - dxmin) * 2 * np.pi / (dxmax-dxmin) - np.pi
+    # unwrap
+    dx = skimage.restoration.unwrap_phase(dx, wrap_around=(False, False))
+    # rescale 
+    dx = (dx + np.pi) * (dxmax-dxmin) / (2.*np.pi) + dxmin
+    # smooth
+    dx = no_wrap_smooth(dx, np.ones_like(X_ij[0]), smooth)
+    X_ij[0] = np.rint(dx).astype(np.int)
+
+    dy = X_ij[1].astype(np.float)
+    # rescale between -pi and pi
+    dymin, dymax = dy.min(), dy.max()
+    dy = (dy - dymin) * 2 * np.pi / (dymax-dymin) - np.pi
+    # unwrap
+    dy = skimage.restoration.unwrap_phase(dy, wrap_around=(False, False))
+    # rescale 
+    dy = (dy + np.pi) * (dymax-dymin) / (2.*np.pi) + dymin
+    # smooth
+    dy = no_wrap_smooth(dy, np.ones_like(X_ij[0]), smooth)
+    X_ij[1] = np.rint(dy).astype(np.int)
+    return X_ij
+
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
     f = h5py.File(args.filename)
@@ -357,8 +395,7 @@ if __name__ == '__main__':
         good_frames = list(f[params['cpu_stitch']['good_frames']][()])
     else :
         good_frames = range(f['entry_1/data_1/data'].shape[0])
-    #good_frames = list(range(10))
-    #good_frames = [0,1,2,3,4,21,22,23,24,25,42,43,44,45,46,53,54,55,56,57,64,65,66,67,68]
+    
     
     # everyone has their own frames
     my_frames = chunkIt(good_frames, size)[rank]
@@ -416,20 +453,24 @@ if __name__ == '__main__':
     else :
         delta_from_file = False
         delta_ij    = None
+        delta_ij    = np.zeros((2,)+data.shape[1:], dtype=np.int)
     
     f.close()
 
-    R, O, X_ij = prepare_input(data.shape, R, None, None)
+    search_window = params['cpu_stitch']['search_window']
+    window        = params['cpu_stitch']['window']
+
+    # determine edges from grid
+    is_edge = determine_edges(R, delta_ij, search_window)
+    if rank == 0 :
+        print('found:', np.sum(is_edge),' edge frames')
+    
+    R, O, X_ij = prepare_input(data.shape, R, None, delta_ij)
     W         *= mask
     my_R       = np.array(chunkIt(R, size)[rank])
+    my_edge    = np.array(chunkIt(is_edge, size)[rank])
     O          = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
-    #O          = 0.2 * np.random.random(O.shape) + 0.9
-
-    is_edge = np.ones((data.shape[0],), dtype=np.bool)
-    is_edge[data.shape[0]//2-1: data.shape[0]//2+2] = False
-
-    search_window = 10
-
+    
     if rank==0 :
         Os    = []
         X_ijs = []
@@ -437,52 +478,43 @@ if __name__ == '__main__':
         Os.append(O.copy())
         X_ijs.append(X_ij.copy())
 
-    for d in [1, 1] :
-        # downsample :
-        if rank == 0 :
-            print '\ndownsampling'
-        
-        data_s, mask_s, my_R_s, O_s, W_s, X_ij_s = downsample(data, mask, my_R, O, W, X_ij, d)
-        #O_s    = O_s / float(d**2)
+    for i in range(params['cpu_stitch']['max_iters_outer']) :
+        if rank==0 :
+            print(i)
+        X_ij_t = X_ij.copy()
+        X_new  = X_ij.copy()
         
         # refine :
-        for i in range(10):
+        for j in range(params['cpu_stitch']['max_iters']) :
+            X_old = X_new.copy()
+            O, N, P, X_new = maximise(data.astype(np.float), mask, my_R, O, W, X_ij_t, my_edge, search_window, window)
             
-            O_s, N, P, temp = maximise(data_s.astype(np.float), mask_s, my_R_s, O_s, W_s, X_ij_s, is_edge, search_window, 8)
-            #X_ij_s       = temp.copy()
-            
-            O    = upsample_array(O_s, O.shape, d)
-            X_ij = np.array([np.rint(d*upsample_array(x, X_ij[0].shape, d)) for x in temp], dtype=X_ij.dtype)
-        
             if rank==0 :
+                print(j)
                 # store the updated object
-                #lss.append(ls.copy())
                 Os.append(O.copy())
-                X_ijs.append(X_ij.copy())
-
-        import skimage.restoration
-        # unwrap X 
-        dx = X_ij[0].astype(np.float)
-        dxmin, dxmax = dx.min(), dx.max()
-        dx -= dxmin
-        dx = dx * 2 * np.pi / (dxmax-dxmin) - np.pi
-        dx = skimage.restoration.unwrap_phase(dx, wrap_around=(False, False))
-        dx = (dx + np.pi) * search_window / (2.*np.pi) + dxmax
-        dx = np.rint(no_wrap_smooth(dx, np.ones_like(mask), 4)).astype(np.int)
-        X_ij[0] = np.rint(dx).astype(np.int)
+                X_ijs.append(X_new.copy())
         
-        dy = X_ij[1].astype(np.float)
-        dymin, dymax = dy.min(), dy.max()
-        dy -= dymin
-        dy = dy * 2 * np.pi / (dymax-dymin) - np.pi
-        dy = skimage.restoration.unwrap_phase(dy, wrap_around=(False, False))
-        dy = (dy + np.pi) * search_window / (2.*np.pi) + dymax
-        dy = np.rint(no_wrap_smooth(dy, np.ones_like(mask), 4)).astype(np.int)
-        X_ij[1] = np.rint(dy).astype(np.int)
+            # break if no change
+            if np.allclose(X_new, X_old):
+                if rank==0 :
+                    print('converged inner loop', j)
+                break
+        
+        if np.allclose(X_new, X_ij):
+            if rank==0 :
+                print('converged outer loop', i)
+            break
+        
+        # unwrap X 
+        X_ij = unwrap_smooth(X_new, params['cpu_stitch']['smooth']) 
         
         # reinitialise O
         O = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
             
+        if rank==0 :
+            # store the updated object
+            Os.append(O.copy())
     
     if rank == 0 :
         f = h5py.File('temp.h5')

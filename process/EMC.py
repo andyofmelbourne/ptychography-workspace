@@ -51,7 +51,6 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     Rij = \prod_k Wkj^Kki e^-Wkj
     """
     P      = np.zeros( (search_window**2,) + data.shape[1:], dtype=np.float)
-    t      = np.zeros( (search_window**2,) + data.shape, dtype=np.float)
     di, dj = np.indices(Ip.shape)
 
     import scipy.special
@@ -75,7 +74,6 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
                     
                     #p      += likelihood_match(data[k], d, window, sfmask)
                     l       = likelihood_match(data[k], d, window, sfmask)
-                    t[kk, k] = d.copy()
                     p      += l
                     m      += sfmask.astype(np.float)
             
@@ -99,51 +97,15 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     P0 = P.copy()
     #P0 = t
     
-    # smooth P over neighbouring pixels
+    X_ij_out = update_Xij(P, X_ij)
     
-    # now update W 
-    Iout = np.zeros_like(I)
-    N    = np.zeros_like(I)
+    # EMC style update
+    Iout     = update_O_EMC(P, I.shape, R, X_ij, data, Ip, mask)
     
-    if rank == 0 :
-        print('merging...')
-    for k in range(data.shape[0]):
-        for ii, i in enumerate(range((-search_window)//2, search_window//2, 1)):
-            for jj, j in enumerate(range((-search_window)//2, search_window//2, 1)):
-                kk        = search_window*ii+jj
-                
-                # generate the shifted view of the object for frame k
-                # with no warping
-                ss        = di + i - R[k][0] + X_ij[0]
-                fs        = dj + j - R[k][1] + X_ij[1]
-                sfmask    = (ss > 0) * (ss < I.shape[0]) * (fs > 0) * (fs < I.shape[1]) * mask
-                
-                Iout[ss[sfmask], fs[sfmask]] += P[kk][sfmask] * data[k][sfmask] * Ip[sfmask]
-                N[ss[sfmask], fs[sfmask]]    += P[kk][sfmask] * Ip[sfmask]**2
-        
-    comm.Allreduce(N.copy(), N)
-    comm.Allreduce(Iout.copy(), Iout)
+    # sharp update
+    #Iout     = update_O(I, R, X_ij_out, data, Ip, mask)
     
-    #i = (N < 1.0e-3)
-    #N[i]  = 1.
-    Iout /= (N+1.0e-5)
-    Iout[Iout==0] = 1.
-    
-    # now update X
-    X_ij_out = X_ij.copy()
-    dy, dx = np.unravel_index(np.argmax(P, axis=0), (search_window, search_window))
-    dy = dy + (-search_window)//2
-    dx = dx + (-search_window)//2
-    
-    #dy_mean = np.mean(dy)
-    #dx_mean = np.mean(dx)
-    #dy = np.rint(dy.astype(np.float)-dy_mean).astype(np.int)
-    #dx = np.rint(dx.astype(np.float)-dx_mean).astype(np.int)
-    
-    X_ij_out[0] += dy
-    X_ij_out[1] += dx
-    
-    return Iout, N, P0, X_ij_out
+    return Iout, P0, X_ij_out
     
 def likelihood_match(data, lamb, window, mask):
     """
@@ -163,8 +125,53 @@ def no_wrap_smooth(l, mask, sig):
     n[n==0] = 1.
     return l / n
     
-def compress():
-    pass
+def update_Xij(P, X_ij):
+    search_window = int(np.sqrt(P.shape[0]))
+    
+    # now update X
+    X_ij_out = X_ij.copy()
+    dy, dx = np.unravel_index(np.argmax(P, axis=0), (search_window, search_window))
+    dy = dy + (-search_window)//2
+    dx = dx + (-search_window)//2
+    
+    #dy_mean = np.mean(dy)
+    #dx_mean = np.mean(dx)
+    #dy = np.rint(dy.astype(np.float)-dy_mean).astype(np.int)
+    #dx = np.rint(dx.astype(np.float)-dx_mean).astype(np.int)
+    
+    X_ij_out[0] += dy
+    X_ij_out[1] += dx
+    return X_ij_out
+
+def update_O_EMC(P, Oshape, R, X_ij, data, W, mask):
+    # now update W 
+    Iout = np.zeros(Oshape, dtype=np.float)
+    N    = np.zeros(Oshape, dtype=np.float)
+    
+    search_window = int(np.sqrt(P.shape[0]))
+    di, dj = np.indices(W.shape)
+    if rank == 0 :
+        print('merging...')
+    for k in range(data.shape[0]):
+        for ii, i in enumerate(range((-search_window)//2, search_window//2, 1)):
+            for jj, j in enumerate(range((-search_window)//2, search_window//2, 1)):
+                kk        = search_window*ii+jj
+                
+                # generate the shifted view of the object for frame k
+                # with no warping
+                ss        = di + i - R[k][0] + X_ij[0]
+                fs        = dj + j - R[k][1] + X_ij[1]
+                sfmask    = (ss > 0) * (ss < Oshape[0]) * (fs > 0) * (fs < Oshape[1]) * mask
+                
+                Iout[ss[sfmask], fs[sfmask]] += P[kk][sfmask] * data[k][sfmask] * W[sfmask]
+                N[ss[sfmask], fs[sfmask]]    += P[kk][sfmask] * W[sfmask]**2
+        
+    comm.Allreduce(N.copy(), N)
+    comm.Allreduce(Iout.copy(), Iout)
+    
+    Iout /= (N+1.0e-5)
+    Iout[Iout==0] = 1.
+    return Iout
 
 def update_O(O, R, X_ij, data, W, mask):
     O_out   = np.ascontiguousarray(np.zeros_like(O))
@@ -333,15 +340,17 @@ def determine_edges(R, X_ij, search_window):
     Oshape = (int(round(di.max() + np.max(np.abs(RO[:, 0])) )), \
               int(round(dj.max() + np.max(np.abs(RO[:, 1])) )))
     is_edge = np.zeros((len(R),), dtype=np.bool)
+    edginess = np.zeros((len(R),), dtype=np.int)
     for k in range(R.shape[0]):
         for i in [(-search_window)//2, search_window//2, 1]:
             for j in [(-search_window)//2, search_window//2, 1]:
                 ss        = di + i - RO[k][0] + X_ij[0]
                 fs        = dj + j - RO[k][1] + X_ij[1]
                 sfmask    = (ss > 0) * (ss < Oshape[0]) * (fs > 0) * (fs < Oshape[0])
-                if np.any(~sfmask) :
+                edginess[k] = np.sum(~sfmask)
+                if edginess[k]>0 :
                     is_edge[k] = True
-    return is_edge
+    return is_edge, edginess
     
 def unwrap_smooth(X_ij, smooth):
     import skimage.restoration
@@ -371,31 +380,29 @@ def unwrap_smooth(X_ij, smooth):
     X_ij[1] = np.rint(dy).astype(np.int)
     return X_ij
 
-if __name__ == '__main__':
-    args, params = parse_cmdline_args()
-    f = h5py.File(args.filename)
+def read_from_file(fnam, params):
+    f = h5py.File(fnam)
     
     ################################
     # Get the inputs
     # frames, df, R, O, W, ROI, mask
     ################################
-    group = params['cpu_stitch']['h5_group']
+    group = params['EMC']['h5_group']
     
     # ROI
     # ------------------
-    if params['cpu_stitch']['roi'] is not None :
-        ROI = params['cpu_stitch']['roi']
+    if params['EMC']['roi'] is not None :
+        ROI = params['EMC']['roi']
     else :
         ROI = [0, f['entry_1/data_1/data'].shape[0], 0, f['entry_1/data_1/data'].shape[1]]
     
     # frames
     # ------------------
     # get the frames to process
-    if params['cpu_stitch']['good_frames'] is not None :
-        good_frames = list(f[params['cpu_stitch']['good_frames']][()])
+    if params['EMC']['good_frames'] is not None :
+        good_frames = list(f[params['EMC']['good_frames']][()])
     else :
         good_frames = range(f['entry_1/data_1/data'].shape[0])
-    
     
     # everyone has their own frames
     my_frames = chunkIt(good_frames, size)[rank]
@@ -404,26 +411,26 @@ if __name__ == '__main__':
     # df
     # ------------------
     # get the sample to detector distance
-    if params['cpu_stitch']['defocus'] is not None :
-        df = params['cpu_stitch']['defocus']
+    if params['EMC']['defocus'] is not None :
+        df = params['EMC']['defocus']
     else :
         df = f['/entry_1/sample_3/geometry/translation'][0, 2]
     
     # R
     # ------------------
     # get the pixel shift coordinates along ss and fs
-    R, dx = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
+    R, dx = utils.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['EMC']['defocus'], offset_to_zero=True)
     
     # allow for astigmatism
-    if params['cpu_stitch']['defocus_fs'] is not None :
-        R[:, 1] *= df / params['cpu_stitch']['defocus_fs']
+    if params['EMC']['defocus_fs'] is not None :
+        R[:, 1] *= df / params['EMC']['defocus_fs']
     
     # W
     # ------------------
     # get the whitefield
-    if params['cpu_stitch']['whitefield'] is not None :
-        W = f[params['cpu_stitch']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
-        if params['cpu_stitch']['whitefield'] == 'process_2/powder' :
+    if params['EMC']['whitefield'] is not None :
+        W = f[params['EMC']['whitefield']][()][ROI[0]:ROI[1], ROI[2]:ROI[3]].astype(np.float)
+        if params['EMC']['whitefield'] == 'process_2/powder' :
             W /= float(f['/entry_1/data_1/data'].shape[0])
     else :
         W = np.mean(data, axis=0)
@@ -431,19 +438,19 @@ if __name__ == '__main__':
     # mask
     # ------------------
     # mask hot / dead pixels
-    if params['cpu_stitch']['mask'] is None :
+    if params['EMC']['mask'] is None :
         bit_mask = f['entry_1/instrument_1/detector_1/mask'].value
         # hot (4) and dead (8) pixels
         mask     = ~np.bitwise_and(bit_mask, 4 + 8).astype(np.bool) 
     else :
-        mask = f[params['cpu_stitch']['mask']].value
+        mask = f[params['EMC']['mask']].value
     mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
 
     # delta_ij
     # -------------------
-    if params['cpu_stitch']['pixel_shifts'] is not None :
+    if params['EMC']['pixel_shifts'] is not None :
         delta_ij    = np.zeros((2,) + f['/entry_1/data_1/data'].shape[1:], dtype=np.float)
-        delta_ij    = f[params['cpu_stitch']['pixel_shifts']][()]
+        delta_ij    = f[params['EMC']['pixel_shifts']][()]
         delta_ij    = delta_ij[:, ROI[0]:ROI[1], ROI[2]:ROI[3]]
         delta_from_file = True
 
@@ -456,14 +463,129 @@ if __name__ == '__main__':
         delta_ij    = np.zeros((2,)+data.shape[1:], dtype=np.int)
     
     f.close()
+    return ROI, good_frames, my_frames, data, df, R, dx, W, mask, delta_ij
 
-    search_window = params['cpu_stitch']['search_window']
-    window        = params['cpu_stitch']['window']
+
+def write_output(fnam, params, pupil_full, phase_full, 
+                 aberrations_full, P_sample, P_focus, 
+                 Os, delta_ij_full, P, W_full):
+    f = h5py.File(fnam)
+    
+    if params['EMC']['pixel_shifts'] is not None :
+        delta_from_file = True
+    else :
+        delta_from_file = False
+    
+    # write the result 
+    ##################
+    if params['EMC']['output_file'] is not None :
+        g = h5py.File(params['EMC']['output_file'])
+        outputdir = os.path.split(params['EMC']['output_file'])[0]
+    else :
+        g = f
+        outputdir = os.path.split(fnam)[0]
+    
+    group = params['EMC']['h5_group']
+    if group not in g:
+        print g.keys()
+        g.create_group(group)
+
+    print '\nwriting to file:'
+    
+    # pupil
+    key = params['EMC']['h5_group']+'/pupil'
+    if key in g :
+        del g[key]
+    g[key] = pupil_full
+
+    # phase
+    key = params['EMC']['h5_group']+'/phase'
+    if key in g :
+        del g[key]
+    g[key] = phase_full
+
+    # aberration
+    key = params['EMC']['h5_group']+'/abberation'
+    if key in g :
+        del g[key]
+    g[key] = aberrations_full
+
+    # sample plane probe propagation
+    key = params['EMC']['h5_group']+'/probe_sample_fres'
+    if key in g :
+        del g[key]
+    g[key] = P_sample
+
+    # focal spot
+    key = params['EMC']['h5_group']+'/probe_focus'
+    if key in g :
+        del g[key]
+    g[key] = P_focus
+    
+    # object history
+    if len(Os) > 1:
+        key = params['EMC']['h5_group']+'/Os'
+        if delta_from_file is True and key in g and Os.shape[1:] == g[key].shape[1:] :
+            Os = [g[key][i] for i in range(g[key].shape[0])] + list(Os[1:])  
+        if key in g :
+            del g[key]
+        g[key] = np.array(Os)
+    
+    # pixel shifts
+    key = params['EMC']['h5_group']+'/pixel_shifts'
+    if key in g :
+        del g[key]
+    g[key] = delta_ij_full
+    
+    # Pearson coefficients 
+    print(len(P), P.shape, P.dtype)
+    if P is not None :
+        key = params['EMC']['h5_group']+'/probs'
+        if key in g :
+            del g[key]
+        g[key] = P
+
+    # object
+    key = params['EMC']['h5_group']+'/O'
+    if key in g :
+        del g[key]
+    g[key] = Os[-1] #np.sqrt(O).astype(np.complex128)
+    
+    # whitefield
+    key = params['EMC']['h5_group']+'/whitefield'
+    if key in g :
+        del g[key]
+    g[key] = W_full
+    
+    g.close()
+    
+    # copy the config file
+    ######################
+    try :
+        import shutil
+        shutil.copy(args.config, outputdir)
+    except Exception as e :
+        print e
+
+if __name__ == '__main__':
+    args, params = parse_cmdline_args()
+    ROI, good_frames, my_frames, data, df, R, dx, W, mask, delta_ij = read_from_file(args.filename, params)
+    
+    search_window = params['EMC']['search_window']
+    window        = params['EMC']['window']
+    minframes     = params['EMC']['min_frames']
 
     # determine edges from grid
-    is_edge = determine_edges(R, delta_ij, search_window)
+    is_edge, edginess = determine_edges(R, delta_ij, search_window)
+    if np.sum(~is_edge) < minframes :
+        for i in range(minframes):
+            j = np.argmin(edginess)
+            is_edge[j] = False
+            edginess[j] = 99999999999
+        
     if rank == 0 :
         print('found:', np.sum(is_edge),' edge frames')
+        print('found:', np.sum(~is_edge),' non edge frames')
     
     R, O, X_ij = prepare_input(data.shape, R, None, delta_ij)
     W         *= mask
@@ -478,16 +600,16 @@ if __name__ == '__main__':
         Os.append(O.copy())
         X_ijs.append(X_ij.copy())
 
-    for i in range(params['cpu_stitch']['max_iters_outer']) :
+    for i in range(params['EMC']['max_iters_outer']) :
         if rank==0 :
             print(i)
         X_ij_t = X_ij.copy()
         X_new  = X_ij.copy()
         
         # refine :
-        for j in range(params['cpu_stitch']['max_iters']) :
+        for j in range(params['EMC']['max_iters']) :
             X_old = X_new.copy()
-            O, N, P, X_new = maximise(data.astype(np.float), mask, my_R, O, W, X_ij_t, my_edge, search_window, window)
+            O, P, X_new = maximise(data.astype(np.float), mask, my_R, O, W, X_ij_t, my_edge, search_window, window)
             
             if rank==0 :
                 print(j)
@@ -507,7 +629,7 @@ if __name__ == '__main__':
             break
         
         # unwrap X 
-        X_ij = unwrap_smooth(X_new, params['cpu_stitch']['smooth']) 
+        X_ij = unwrap_smooth(X_new, params['EMC']['smooth']) 
         
         # reinitialise O
         O = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
@@ -516,20 +638,54 @@ if __name__ == '__main__':
             # store the updated object
             Os.append(O.copy())
     
+    # Finish
+    ########
     if rank == 0 :
-        f = h5py.File('temp.h5')
-        key = '/Os'
-        if key in f :
-            del f[key]
-        f[key] = np.array(Os)
+        import cpu_stitch as cs
+        f = h5py.File(args.filename)
 
-        key = '/X_ijs'
-        if key in f :
-            del f[key]
-        f[key] = np.array(X_ijs)
-
-        key = '/P'
-        if key in f :
-            del f[key]
-        f[key] = P
+        # get the phase
+        ###############
+        import scipy.constants as sc
+        du = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
+        z  = f['/entry_1/instrument_1/detector_1/distance'][()]
+        E  = f['/entry_1/instrument_1/source_1/energy'][()]
+        wavelen = sc.h * sc.c / E
+        
+        if 'rot_degrees' in params['EMC'] and params['EMC']['rot_degrees'] is not None :
+            aberrations, phase = cs.pixel_shifts_to_phase(X_ij2, z, 75.0e-6, wavelen, df)
+        else :
+            aberrations, phase = cs.pixel_shifts_to_phase(delta_ij, z, 75.0e-6, wavelen, df)
+        pupil              = np.sqrt(W) * np.exp(1J * phase)
+        
+        # put back into det frame
+        #########################
+        delta_ij_full = np.zeros((2,) + f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+        delta_ij_full[0][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[0]
+        delta_ij_full[1][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[1]
+        
+        phase_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+        phase_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = phase
+        
+        aberrations_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+        aberrations_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = aberrations
+        
+        pupil_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.complex)
+        pupil_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = pupil
+        
+        W_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
+        W_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = W
+        
         f.close()
+        
+        # get the focus spot
+        ####################
+        P_focus = cs.get_focus_probe(pupil)
+        
+        # get the sample plane probe
+        ############################
+        P_sample = cs.get_sample_plane_probe(pupil, wavelen, z, du, df)
+        
+        write_output(args.filename, params, pupil_full, phase_full, 
+                     aberrations_full, P_sample, P_focus, 
+                     Os, delta_ij_full, P, W_full)

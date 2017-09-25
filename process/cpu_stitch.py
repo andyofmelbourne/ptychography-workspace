@@ -540,8 +540,8 @@ def fill_pixel_shifts_from_edge(delta_ij):
             right = i
             break
         
-    print('filling zero values in delta_ij')
-    print('edges at:', left, right, top, bot)
+    #print('filling zero values in delta_ij')
+    #print('edges at:', left, right, top, bot)
     
     for i in range(left):
         out[0][:, i] = np.mean(delta_ij[0][:, left:left+4], axis=-1)

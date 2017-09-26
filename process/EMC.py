@@ -73,12 +73,13 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
                     d[sfmask] = Ip[sfmask] * I[ss[sfmask], fs[sfmask]]
                     
                     #p      += likelihood_match(data[k], d, window, sfmask)
-                    l       = likelihood_match(data[k], d, window, sfmask)
-                    p      += l
-                    m      += sfmask.astype(np.float)
+                    l       = data[k][sfmask] * np.log(d[sfmask]) - d[sfmask]
+                    p[sfmask]  += l
+                    m[sfmask]  += 1.
             
             m[m==0] = 1.
             P[kk]  += p / m
+            P[kk]   = no_wrap_smooth(P[kk], mask, window/2.)
                 
     # all reduce P
     comm.Allreduce(P.copy(), P)
@@ -111,11 +112,12 @@ def likelihood_match(data, lamb, window, mask):
     """
     return l(lamb; data) = sum_window (data[i] ln(lamb[i]) - lamb[i])
     """
-    import scipy.special
+    #import scipy.special
     i = (lamb>0)*mask
     l = np.zeros(data.shape, dtype=np.float)
     l[i] = data[i] * np.log(lamb[i]) - lamb[i] #- scipy.special.gammaln(data[i]+1)
-    l    = no_wrap_smooth(l, mask, window/2)
+    if (window is not None) or (window > 0) :
+        l    = no_wrap_smooth(l, mask, window/2.)
     l[~i] = 0
     return l
 
@@ -347,7 +349,7 @@ def determine_edges(R, X_ij, search_window):
                 ss        = di + i - RO[k][0] + X_ij[0]
                 fs        = dj + j - RO[k][1] + X_ij[1]
                 sfmask    = (ss > 0) * (ss < Oshape[0]) * (fs > 0) * (fs < Oshape[0])
-                edginess[k] = np.sum(~sfmask)
+                edginess[k] += np.sum(~sfmask)
                 if edginess[k]>0 :
                     is_edge[k] = True
     return is_edge, edginess
@@ -655,14 +657,14 @@ if __name__ == '__main__':
         if 'rot_degrees' in params['EMC'] and params['EMC']['rot_degrees'] is not None :
             aberrations, phase = cs.pixel_shifts_to_phase(X_ij2, z, 75.0e-6, wavelen, df)
         else :
-            aberrations, phase = cs.pixel_shifts_to_phase(delta_ij, z, 75.0e-6, wavelen, df)
+            aberrations, phase = cs.pixel_shifts_to_phase(X_ij, z, 75.0e-6, wavelen, df)
         pupil              = np.sqrt(W) * np.exp(1J * phase)
         
         # put back into det frame
         #########################
         delta_ij_full = np.zeros((2,) + f['entry_1/data_1/data'].shape[1:], dtype=np.float)
-        delta_ij_full[0][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[0]
-        delta_ij_full[1][ROI[0]:ROI[1], ROI[2]:ROI[3]] = delta_ij[1]
+        delta_ij_full[0][ROI[0]:ROI[1], ROI[2]:ROI[3]] = X_ij[0]
+        delta_ij_full[1][ROI[0]:ROI[1], ROI[2]:ROI[3]] = X_ij[1]
         
         phase_full = np.zeros(f['entry_1/data_1/data'].shape[1:], dtype=np.float)
         phase_full[ROI[0]:ROI[1], ROI[2]:ROI[3]] = phase

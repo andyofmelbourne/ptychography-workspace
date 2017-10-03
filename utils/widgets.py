@@ -801,8 +801,8 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
                 # special case when config_dict[group][key] is a list
                 if type(config_dict[group][key]) is list or type(config_dict[group][key]) is np.ndarray :
                     setT = ''
-                    for i in range(len(config_dict[group][key])-1):
-                        setT += str(config_dict[group][key][i]) + ','
+                    for ii in range(len(config_dict[group][key])-1):
+                        setT += str(config_dict[group][key][ii]) + ','
                     setT += str(config_dict[group][key][-1])
                 else :
                     setT = str(config_dict[group][key])
@@ -1108,6 +1108,117 @@ class Show_EMC_widget(PyQt4.QtGui.QWidget):
             self.im_init = True
         self.f.close()
 
+class Show_make_pixel_shifts_widget(PyQt4.QtGui.QWidget):
+    def __init__(self, filename, config_dict):
+        super(Show_make_pixel_shifts_widget, self).__init__()
+        
+        self.initUI(filename, config_dict)
+
+    def initUI(self, filename, config_dict):
+        """
+        First show the stitch if there is one...
+        
+        We need: 
+        an imageview on the left
+        a config writer on the right
+        below that a run button 
+        below that a run and log command widget
+        
+        then wait for command to finish and show the image
+        
+        would be cool if we could show a scatter plot of the 
+        positions on top of the stitch image.
+        """
+        # get the output directory
+        self.output_dir = os.path.split(filename)[0]
+        self.config_filename = os.path.join(self.output_dir, 'make_pixel_shifts.ini')
+        self.filename = filename
+        self.f = h5py.File(filename, 'r')
+        
+        # Make a grid layout
+        layout = PyQt4.QtGui.QGridLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+        
+        # stitch plot
+        #############
+        self.plotW = pg.PlotWidget(title = 'pixel shifts ss / fs --> green / red')
+        
+        self.h5_path  = config_dict['make_pixel_shifts']['h5_group'] + '/1d_profile'
+        self.h5_path2 = config_dict['make_pixel_shifts']['h5_group'] + '/1d_profile_plot'
+        self.im_init = False
+        if self.h5_path+'_fs' in self.f :
+            fs = self.f[self.h5_path+'_fs'][()]
+            ss = self.f[self.h5_path+'_ss'][()]
+            self.plotW.plot(fs, pen=(255, 150, 150))
+            self.plotW.plot(ss, pen=(150, 255, 150))
+            
+            if self.h5_path2+'_fs' in self.f :
+                fs2 = self.f[self.h5_path2+'_fs'][()]
+                ss2 = self.f[self.h5_path2+'_ss'][()]
+                self.plotW.plot(fs2, pen=(255, 0, 0))
+                self.plotW.plot(ss2, pen=(0, 255, 0))
+            self.im_init = True
+        self.f.close()
+        
+        # config widget
+        ###############
+        self.config_widget = Write_config_file_widget(config_dict, self.config_filename)
+
+        # run command widget
+        ####################
+        self.run_command_widget = Run_and_log_command()
+        self.run_command_widget.finished_signal.connect(self.finished)
+        
+        # run command button
+        ####################
+        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button.clicked.connect(self.run_button_clicked)
+        
+        # add a spacer for the labels and such
+        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        
+        # set the layout
+        ################
+        layout.addWidget(self.plotW,               0, 1, 5, 1)
+        layout.addWidget(self.config_widget,       0, 0, 1, 1)
+        layout.addWidget(self.run_button,          1, 0, 1, 1)
+        #layout.addWidget(self.ref_button,          2, 0, 1, 1)
+        #layout.addWidget(self.set_button,          3, 0, 1, 1)
+        layout.addItem(verticalSpacer,             4, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  5, 0, 1, 2)
+        #layout.addWidget(self.run_ref_widget,      6, 0, 1, 2)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnMinimumWidth(0, 250)
+        self.layout = layout
+
+    def run_button_clicked(self):
+        # write the config file 
+        #######################
+        self.config_widget.write_file()
+    
+        # Run the command 
+        #################
+        py = os.path.join(root, 'process/make_pixel_shifts.py')
+        cmd = 'python ' + py + ' ' + self.filename + ' -c ' + self.config_filename
+        self.run_command_widget.run_cmd(cmd)
+    
+    def finished(self):
+        self.f = h5py.File(self.filename, 'r')
+        if self.im_init :
+            self.plotW.clear()
+        fs = self.f[self.h5_path+'_fs'][()]
+        ss = self.f[self.h5_path+'_ss'][()]
+        self.plotW.plot(fs, pen=(255, 150, 150))
+        self.plotW.plot(ss, pen=(150, 255, 150))
+
+        if self.h5_path2+'_fs' in self.f :
+            fs2 = self.f[self.h5_path2+'_fs'][()]
+            ss2 = self.f[self.h5_path2+'_ss'][()]
+            self.plotW.plot(fs2, pen=(255, 0, 0))
+            self.plotW.plot(ss2, pen=(0, 255, 0))
+        self.f.close()
 
 class Show_gpu_stitch_widget(PyQt4.QtGui.QWidget):
     def __init__(self, filename, config_dict):

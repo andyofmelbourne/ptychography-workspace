@@ -37,6 +37,7 @@ from widgets import View_h5_data_widget
 from widgets import Test_run_command_widget
 from widgets import Zernike_widget
 from widgets import Defocus_widget
+from widgets import Show_make_pixel_shifts_widget
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -114,6 +115,13 @@ class Gui(PyQt4.QtGui.QTabWidget):
         self.tabs.append( Show_cpu_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "stitch with pixel shifts")
         
+        # Show EMC tab
+        #####################
+        # load the default config file
+        params = load_config(filename, name='make_pixel_shifts.ini')
+        self.tabs.append( Show_make_pixel_shifts_widget(filename, params) )
+        self.addTab(self.tabs[-1], "make pixel shifts")
+
         # Show EMC tab
         #####################
         # load the default config file

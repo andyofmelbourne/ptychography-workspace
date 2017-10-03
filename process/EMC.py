@@ -51,6 +51,7 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     Rij = \prod_k Wkj^Kki e^-Wkj
     """
     P      = np.zeros( (search_window**2,) + data.shape[1:], dtype=np.float)
+    m      = np.zeros( (search_window**2,) + data.shape[1:], dtype=np.uint16)
     di, dj = np.indices(Ip.shape)
 
     import scipy.special
@@ -59,8 +60,6 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     
     for ii, i in enumerate(range((-search_window)//2, search_window//2, 1)):
         for jj, j in enumerate(range((-search_window)//2, search_window//2, 1)):
-            m = np.zeros(data.shape[1:], dtype=np.float)
-            p = np.zeros(data.shape[1:], dtype=np.float)
             kk= search_window*ii+jj
             for k in range(data.shape[0]):
                 if not is_edge[k] :
@@ -71,18 +70,20 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
                     fs        = dj + j - R[k][1] + X_ij[1]
                     sfmask    = (ss > 0) * (ss < I.shape[0]) * (fs > 0) * (fs < I.shape[1]) * mask
                     d[sfmask] = Ip[sfmask] * I[ss[sfmask], fs[sfmask]]
+
+                    # exclude zeros
+                    sfmask[d<1] = False
                     
                     #p      += likelihood_match(data[k], d, window, sfmask)
                     l       = data[k][sfmask] * np.log(d[sfmask]) - d[sfmask]
-                    p[sfmask]  += l
-                    m[sfmask]  += 1.
+                    P[kk][sfmask]  += l
+                    m[kk][sfmask]  += 1
             
-            m[m==0] = 1.
-            P[kk]  += p / m
             P[kk]   = no_wrap_smooth(P[kk], mask, window/2.)
                 
     # all reduce P
     comm.Allreduce(P.copy(), P)
+    comm.Allreduce(m.copy(), m)
     
     # P: log likelihood --> probability normalised over the shifts
     P   -= np.max(P, axis=0)
@@ -91,10 +92,11 @@ def maximise(data, mask, R, I, Ip, X_ij, is_edge, search_window, window=6):
     #P    = np.array( [no_wrap_smooth(p, mask, 10) for p in P] )
     # normalise
     psum = np.sum(P, axis=0)
-    i    = (psum == 0)
-    psum[i] = 1.
+    #i    = (psum == 0)
+    #psum[i] = 1.
     P  /= psum
-    P  *= ~i
+    #P  *= ~i
+    P  = P * (m>2)
     P0 = P.copy()
     #P0 = t
     
@@ -172,7 +174,7 @@ def update_O_EMC(P, Oshape, R, X_ij, data, W, mask):
     comm.Allreduce(Iout.copy(), Iout)
     
     Iout /= (N+1.0e-5)
-    Iout[Iout==0] = 1.
+    #Iout[Iout==0] = 1.
     return Iout
 
 def update_O(O, R, X_ij, data, W, mask):
@@ -203,7 +205,7 @@ def update_O(O, R, X_ij, data, W, mask):
     
     W_map[W_map==0] = 1.
     O_out          /= W_map
-    O_out[O_out==0] = 1.
+    #O_out[O_out==0] = 1.
         
     return O_out
 
@@ -305,7 +307,7 @@ def upsample_array(ar, shape, factor=2, smooth=True):
     ar_hist = np.bincount(ij2, ar.ravel())
     ar_out  = ar_hist[ij].reshape(i.shape)
     
-    #ar_out = no_wrap_smooth(ar_out, np.ones_like(ar_out), factor/8.)
+    ar_out = no_wrap_smooth(ar_out, np.ones_like(ar_out), factor/8.)
     return ar_out
     
     
@@ -357,6 +359,17 @@ def determine_edges(R, X_ij, search_window):
 def unwrap_smooth(X_ij, smooth):
     import skimage.restoration
     
+    dx, dy = X_ij
+    dx = skimage.restoration.unwrap_phase(dx, wrap_around=(False, False))
+    dy = skimage.restoration.unwrap_phase(dy, wrap_around=(False, False))
+    
+    dx = no_wrap_smooth(dx, np.ones_like(X_ij[0]), smooth)
+    dy = no_wrap_smooth(dy, np.ones_like(X_ij[1]), smooth)
+    
+    X_ij_out = np.empty_like(X_ij)
+    X_ij_out[0] = np.rint(dx).astype(np.int)
+    X_ij_out[1] = np.rint(dy).astype(np.int)
+    """
     dx = X_ij[0].astype(np.float)
     # rescale between -pi and pi
     dxmin, dxmax = dx.min(), dx.max()
@@ -380,7 +393,8 @@ def unwrap_smooth(X_ij, smooth):
     # smooth
     dy = no_wrap_smooth(dy, np.ones_like(X_ij[0]), smooth)
     X_ij[1] = np.rint(dy).astype(np.int)
-    return X_ij
+    """
+    return X_ij_out
 
 def read_from_file(fnam, params):
     f = h5py.File(fnam)
@@ -589,18 +603,32 @@ if __name__ == '__main__':
         print('found:', np.sum(is_edge),' edge frames')
         print('found:', np.sum(~is_edge),' non edge frames')
     
+    
     R, O, X_ij = prepare_input(data.shape, R, None, delta_ij)
     W         *= mask
+
+    shape = data.shape[1:]
+    Oshape = O.shape
+    factor = params['EMC']['downsample']
+    
+    W0 = W.copy()
+    if factor is not None and factor > 1 :
+        data, mask, R, O, W, X_ij = downsample(data, mask, R, O, W, X_ij, factor = factor)
+
     my_R       = np.array(chunkIt(R, size)[rank])
     my_edge    = np.array(chunkIt(is_edge, size)[rank])
     O          = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
     
+    
     if rank==0 :
         Os    = []
         X_ijs = []
-        lss   = []
-        Os.append(O.copy())
-        X_ijs.append(X_ij.copy())
+        if factor > 1 :
+            Os.append(upsample_array(O, Oshape, factor))
+            X_ijs.append(np.array([factor*upsample_array(x, shape, factor) for x in X_ij]))
+        else :
+            Os.append(O.copy())
+            X_ijs.append(X_ij.copy())
 
     for i in range(params['EMC']['max_iters_outer']) :
         if rank==0 :
@@ -616,9 +644,13 @@ if __name__ == '__main__':
             if rank==0 :
                 print(j)
                 # store the updated object
-                Os.append(O.copy())
-                X_ijs.append(X_new.copy())
-        
+                if factor > 1 :
+                    Os.append(upsample_array(O, Oshape, factor))
+                    X_ijs.append(np.array([factor*upsample_array(x, shape, factor) for x in X_new]))
+                else :
+                    Os.append(O.copy())
+                    X_ijs.append(X_new.copy())
+             
             # break if no change
             if np.allclose(X_new, X_old):
                 if rank==0 :
@@ -631,18 +663,51 @@ if __name__ == '__main__':
             break
         
         # unwrap X 
-        X_ij = unwrap_smooth(X_new, params['EMC']['smooth']) 
+        if params['EMC']['unwrap'] :
+            if rank == 0 :
+                print('unwraping')
+            X_ij = unwrap_smooth(X_new, params['EMC']['smooth']) 
+        else :
+            X_ij = X_new.copy()
         
         # reinitialise O
-        O = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
+        #O = update_O(O, my_R, X_ij, data.astype(np.float), W, mask)
             
-        if rank==0 :
+        #if rank==0 :
             # store the updated object
-            Os.append(O.copy())
+            #Os.append(upsample_array(O, shape, factor))
+            #Os.append(upsample_array(O, shape, factor))
+    
+    
+    if rank == 0 :
+        f = h5py.File('temp.h5')
+        key = 'X_ijs'
+        if key in f:
+            del f[key]
+        f[key] = np.array(X_ijs)
+        
+        key = 'Os'
+        if key in f:
+            del f[key]
+        f[key] = np.array(Os)
+        
+        key = 'P'
+        if key in f:
+            del f[key]
+        f[key] = np.array(P)
+        f.close()
+
+    W = W0
     
     # Finish
     ########
     if rank == 0 :
+        Os    = np.array(Os)
+        X_ijs = np.array(X_ijs)
+        
+        O = Os[-1].copy()
+        X_ij = X_ijs[-1].copy()
+        
         import cpu_stitch as cs
         f = h5py.File(args.filename)
 

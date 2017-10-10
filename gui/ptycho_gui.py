@@ -7,8 +7,11 @@ import h5py
 import scipy.constants as sc
 
 import pyqtgraph as pg
-import PyQt4.QtGui
-import PyQt4.QtCore
+#import PyQt4.QtGui
+try :
+    from PyQt5 import QtGui
+except :
+    from PyQt4 import QtGui
 import signal
 import copy 
 import ConfigParser
@@ -70,7 +73,7 @@ def init_file(filename):
     # done 
     f.close()
 
-class Gui(PyQt4.QtGui.QTabWidget):
+class Gui(QtGui.QTabWidget):
     def __init__(self):
         super(Gui, self).__init__()
 
@@ -173,10 +176,10 @@ class Gui(PyQt4.QtGui.QTabWidget):
 
 def gui(filename):
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C
-    app = PyQt4.QtGui.QApplication([])
+    app = QtGui.QApplication([])
     
     # Qt main window
-    Mwin = PyQt4.QtGui.QMainWindow()
+    Mwin = QtGui.QMainWindow()
     Mwin.setWindowTitle(filename)
     
     cw = Gui()

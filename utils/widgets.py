@@ -22,8 +22,12 @@ import h5py
 import scipy.constants as sc
 
 import pyqtgraph as pg
-import PyQt4.QtGui
-import PyQt4.QtCore
+#import PyQt4.QtGui
+#import PyQt4.QtCore
+try :
+    from PyQt5 import QtGui, QtCore
+except :
+    from PyQt4 import QtGui, QtCore
 import signal
 import copy 
 
@@ -61,7 +65,7 @@ def load_config(filename, name = 'basic_stitch.ini'):
     params = utils.parse_parameters(conf)
     return params
 
-class Show_h5_list_widget(PyQt4.QtGui.QWidget):
+class Show_h5_list_widget(QtGui.QWidget):
     def __init__(self, filename, names = None):
         super(Show_h5_list_widget, self).__init__()
 
@@ -69,13 +73,13 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
         self.names    = names
         
         # add the names to Qlist thing
-        self.listWidget = PyQt4.QtGui.QListWidget(self)
+        self.listWidget = QtGui.QListWidget(self)
         #self.listWidget.setMinimumWidth(self.listWidget.sizeHintForColumn(0))
         #self.listWidget.setMinimumHeight(500)
         
         # update list button
         ####################
-        self.update_button = PyQt4.QtGui.QPushButton('update', self)
+        self.update_button = QtGui.QPushButton('update', self)
         self.update_button.clicked.connect(self.update)
 
         # get the list of groups and items
@@ -90,7 +94,7 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
     
     def initUI(self):
         # set the layout
-        layout = PyQt4.QtGui.QVBoxLayout()
+        layout = QtGui.QVBoxLayout()
         layout.addWidget(self.listWidget)
         layout.addWidget(self.update_button)
         
@@ -103,7 +107,7 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
             if ((names is None) or (names is not None and name in names)) \
                     and name not in self.dataset_names:
                 self.dataset_names.append(name)
-                self.dataset_items.append(PyQt4.QtGui.QListWidgetItem(self.listWidget))
+                self.dataset_items.append(QtGui.QListWidgetItem(self.listWidget))
                 self.dataset_items[-1].setText(name)
     
     def update(self):
@@ -112,7 +116,7 @@ class Show_h5_list_widget(PyQt4.QtGui.QWidget):
         f.close()
 
 
-class Show_nd_data_widget(PyQt4.QtGui.QWidget):
+class Show_nd_data_widget(QtGui.QWidget):
     def __init__(self):
         super(Show_nd_data_widget, self).__init__()
 
@@ -124,7 +128,7 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
     
     def initUI(self):
         # set the layout
-        self.layout = PyQt4.QtGui.QVBoxLayout()
+        self.layout = QtGui.QVBoxLayout()
         
         # add the layout to the central widget
         self.setLayout(self.layout)
@@ -239,7 +243,7 @@ class Show_nd_data_widget(PyQt4.QtGui.QWidget):
         self.show(self.filename, self.name, True)
 
 
-class View_h5_data_widget(PyQt4.QtGui.QWidget):
+class View_h5_data_widget(QtGui.QWidget):
     def __init__(self, filename, names = None):
         super(View_h5_data_widget, self).__init__()
         
@@ -255,7 +259,7 @@ class View_h5_data_widget(PyQt4.QtGui.QWidget):
         self.initUI()
 
     def initUI(self):
-        layout = PyQt4.QtGui.QHBoxLayout()
+        layout = QtGui.QHBoxLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -280,7 +284,7 @@ class View_h5_data_widget(PyQt4.QtGui.QWidget):
         self.show_list_widget.update()
         self.plot1dWidget.update()
 
-class Test_run_command_widget(PyQt4.QtGui.QWidget):
+class Test_run_command_widget(QtGui.QWidget):
     def __init__(self, h5_filename):
         super(Test_run_command_widget, self).__init__()
 
@@ -306,7 +310,7 @@ class Test_run_command_widget(PyQt4.QtGui.QWidget):
     
     def initUI(self):
         # Make a grid layout
-        layout = PyQt4.QtGui.QVBoxLayout()
+        layout = QtGui.QVBoxLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -315,7 +319,7 @@ class Test_run_command_widget(PyQt4.QtGui.QWidget):
 
 
         
-class Run_command_template_widget(PyQt4.QtGui.QWidget):
+class Run_command_template_widget(QtGui.QWidget):
     """
     I take a h5 filename and a config dictionary. You should
     subclass me. 
@@ -356,7 +360,7 @@ class Run_command_template_widget(PyQt4.QtGui.QWidget):
         """
         """
         # Make a grid layout
-        layout = PyQt4.QtGui.QVBoxLayout()
+        layout = QtGui.QVBoxLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -378,26 +382,26 @@ class Run_command_template_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button = QtGui.QPushButton('Calculate', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # A do something button
         ##################
-        self.do_button = PyQt4.QtGui.QPushButton('do something', self)
+        self.do_button = QtGui.QPushButton('do something', self)
         self.do_button.clicked.connect(self.do_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
-        vlay = PyQt4.QtGui.QVBoxLayout() 
+        vlay = QtGui.QVBoxLayout() 
         vlay.addWidget(self.run_button)
         vlay.addWidget(self.do_button)
         vlay.addWidget(self.config_widget)
         vlay.addStretch(1)
         
-        hlay = PyQt4.QtGui.QHBoxLayout() 
+        hlay = QtGui.QHBoxLayout() 
         hlay.addLayout(vlay, stretch = 0)
         hlay.addWidget(self.view_output_widget, stretch = 1)
 
@@ -419,13 +423,13 @@ class Run_command_template_widget(PyQt4.QtGui.QWidget):
     def do_button_clicked(self):
         print('you pressed the do button: I do nothing')
 
-class Phase_widget(PyQt4.QtGui.QWidget):
+class Phase_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Phase_widget, self).__init__()
         
         # make a timer for updating O and P
         ###################################
-        self.timer = PyQt4.QtCore.QTimer()
+        self.timer = QtCore.QTimer()
         self.timer.setInterval(2000) # milli-seconds
         self.timer.timeout.connect(self.show_OP)
         
@@ -438,7 +442,7 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         self.filename = filename
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -491,23 +495,23 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button = QtGui.QPushButton('Calculate', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # set sample and probe
         ######################
-        self.set_button = PyQt4.QtGui.QPushButton('set: O, P', self)
+        self.set_button = QtGui.QPushButton('set: O, P', self)
         self.set_button.clicked.connect(self.set_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layouts
         #################
         
         # another grid layout for the images
         ####################################
-        layout_ims = PyQt4.QtGui.QGridLayout()
+        layout_ims = QtGui.QGridLayout()
         layout_ims.setRowStretch(0, 1)
         layout_ims.setRowStretch(1, 1)
         layout_ims.setRowStretch(2, 0)
@@ -517,19 +521,19 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         layout_ims.addWidget(self.p_phase_imageView,  1, 1, 1, 1)
         
         # make a widget and the grid layout to it
-        W = PyQt4.QtGui.QWidget()
+        W = QtGui.QWidget()
         W.setLayout(layout_ims)
         
         # then make a splitter between the emod plot and the 
         # images
-        splitter = PyQt4.QtGui.QSplitter(PyQt4.QtCore.Qt.Vertical)
+        splitter = QtGui.QSplitter(QtCore.Qt.Vertical)
         splitter.addWidget(W)
         splitter.addWidget(self.eMod_plotW)
         layout.addWidget(splitter, 0, 1, 1, 1)
 
         # another grid layout for the buttons
         #####################################
-        layout_but = PyQt4.QtGui.QGridLayout()
+        layout_but = QtGui.QGridLayout()
         layout.addLayout(layout_but, 0, 0, 1, 1)
         layout_but.addWidget(self.config_widget,       0, 0, 1, 1)
         layout_but.addWidget(self.run_button,          1, 0, 1, 1)
@@ -601,7 +605,7 @@ class Phase_widget(PyQt4.QtGui.QWidget):
         print('Done')
         f.close()
 
-class Show_probe_widget(PyQt4.QtGui.QWidget):
+class Show_probe_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_probe_widget, self).__init__()
         
@@ -630,7 +634,7 @@ class Show_probe_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -679,16 +683,16 @@ class Show_probe_widget(PyQt4.QtGui.QWidget):
 
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate', self)
+        self.run_button = QtGui.QPushButton('Calculate', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # set sample and R
         ##################
-        self.set_button = PyQt4.QtGui.QPushButton('set: P', self)
+        self.set_button = QtGui.QPushButton('set: P', self)
         self.set_button.clicked.connect(self.set_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -752,7 +756,7 @@ class Show_probe_widget(PyQt4.QtGui.QWidget):
         print('Done')
         f.close()
 
-class Write_config_file_widget(PyQt4.QtGui.QWidget):
+class Write_config_file_widget(QtGui.QWidget):
     def __init__(self, config_dict, output_filename):
         super(Write_config_file_widget, self).__init__()
         
@@ -761,7 +765,7 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
     
     def initUI(self, config_dict):
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -771,7 +775,7 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
         i = 0
         # add the output config filename 
         ################################    
-        fnam_label = PyQt4.QtGui.QLabel(self)
+        fnam_label = QtGui.QLabel(self)
         fnam_label.setText(self.output_filename)
         
         # add the label to the layout
@@ -783,7 +787,7 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
         group_labels = []
         for group in config_dict.keys():
             # add a label for the group
-            group_labels.append( PyQt4.QtGui.QLabel(self) )
+            group_labels.append( QtGui.QLabel(self) )
             group_labels[-1].setText(group)
             # add the label to the layout
             layout.addWidget(group_labels[-1], i, 0, 1, 2)
@@ -793,11 +797,11 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
             # add the labels and line edits
             for key in config_dict[group].keys():
                 self.labels_lineedits[group][key] = {}
-                self.labels_lineedits[group][key]['label'] = PyQt4.QtGui.QLabel(self)
+                self.labels_lineedits[group][key]['label'] = QtGui.QLabel(self)
                 self.labels_lineedits[group][key]['label'].setText(key)
                 layout.addWidget(self.labels_lineedits[group][key]['label'], i, 0, 1, 1)
                 
-                self.labels_lineedits[group][key]['lineedit'] = PyQt4.QtGui.QLineEdit(self)
+                self.labels_lineedits[group][key]['lineedit'] = QtGui.QLineEdit(self)
                 # special case when config_dict[group][key] is a list
                 if type(config_dict[group][key]) is list or type(config_dict[group][key]) is np.ndarray :
                     setT = ''
@@ -822,7 +826,7 @@ class Write_config_file_widget(PyQt4.QtGui.QWidget):
                     out_str = out_str + str(self.labels_lineedits[group][key]['lineedit'].text())
                     f.write( out_str + '\n')
 
-class Zernike_widget(PyQt4.QtGui.QWidget):
+class Zernike_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Zernike_widget, self).__init__()
         
@@ -836,7 +840,7 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -863,11 +867,11 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -902,7 +906,7 @@ class Zernike_widget(PyQt4.QtGui.QWidget):
         plotitem.plot(self.f[self.z_path][()])
         self.f.close()
 
-class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):
+class Show_cpu_stitch_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_cpu_stitch_widget, self).__init__()
         
@@ -930,7 +934,7 @@ class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -962,11 +966,11 @@ class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1005,7 +1009,7 @@ class Show_cpu_stitch_widget(PyQt4.QtGui.QWidget):
             self.im_init = True
         self.f.close()
 
-class Show_EMC_widget(PyQt4.QtGui.QWidget):
+class Show_EMC_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_EMC_widget, self).__init__()
         
@@ -1033,7 +1037,7 @@ class Show_EMC_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1065,11 +1069,11 @@ class Show_EMC_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1108,7 +1112,7 @@ class Show_EMC_widget(PyQt4.QtGui.QWidget):
             self.im_init = True
         self.f.close()
 
-class Show_make_pixel_shifts_widget(PyQt4.QtGui.QWidget):
+class Show_make_pixel_shifts_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_make_pixel_shifts_widget, self).__init__()
         
@@ -1136,7 +1140,7 @@ class Show_make_pixel_shifts_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1173,11 +1177,11 @@ class Show_make_pixel_shifts_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1220,7 +1224,7 @@ class Show_make_pixel_shifts_widget(PyQt4.QtGui.QWidget):
             self.plotW.plot(ss2, pen=(0, 255, 0))
         self.f.close()
 
-class Show_gpu_stitch_widget(PyQt4.QtGui.QWidget):
+class Show_gpu_stitch_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_gpu_stitch_widget, self).__init__()
         
@@ -1248,7 +1252,7 @@ class Show_gpu_stitch_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1280,11 +1284,11 @@ class Show_gpu_stitch_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1344,7 +1348,7 @@ class Show_gpu_stitch_widget(PyQt4.QtGui.QWidget):
         f.close()
         """
 
-class Show_stitch_widget(PyQt4.QtGui.QWidget):
+class Show_stitch_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Show_stitch_widget, self).__init__()
         
@@ -1372,7 +1376,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1404,12 +1408,12 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate stitch', self)
+        self.run_button = QtGui.QPushButton('Calculate stitch', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # set sample and R
         ##################
-        #self.set_button = PyQt4.QtGui.QPushButton('set: O, R and defocus', self)
+        #self.set_button = QtGui.QPushButton('set: O, R and defocus', self)
         #self.set_button.clicked.connect(self.set_button_clicked)
         
         # refine positions command widget
@@ -1419,11 +1423,11 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         
         # refine positions button
         #################################
-        #self.ref_button = PyQt4.QtGui.QPushButton('refine positions', self)
+        #self.ref_button = QtGui.QPushButton('refine positions', self)
         #self.ref_button.clicked.connect(self.ref_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1491,7 +1495,7 @@ class Show_stitch_widget(PyQt4.QtGui.QWidget):
         f.close()
         """
 
-class Defocus_widget(PyQt4.QtGui.QWidget):
+class Defocus_widget(QtGui.QWidget):
     def __init__(self, filename, config_dict):
         super(Defocus_widget, self).__init__()
         
@@ -1505,7 +1509,7 @@ class Defocus_widget(PyQt4.QtGui.QWidget):
         self.f = h5py.File(filename, 'r')
         
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1537,11 +1541,11 @@ class Defocus_widget(PyQt4.QtGui.QWidget):
         
         # run command button
         ####################
-        self.run_button = PyQt4.QtGui.QPushButton('Calculate defocused probe', self)
+        self.run_button = QtGui.QPushButton('Calculate defocused probe', self)
         self.run_button.clicked.connect(self.run_button_clicked)
         
         # add a spacer for the labels and such
-        verticalSpacer = PyQt4.QtGui.QSpacerItem(20, 40, PyQt4.QtGui.QSizePolicy.Minimum, PyQt4.QtGui.QSizePolicy.Expanding)
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         
         # set the layout
         ################
@@ -1580,7 +1584,7 @@ class Defocus_widget(PyQt4.QtGui.QWidget):
             self.im_init = True
         self.f.close()
 
-class Show_frames_widget(PyQt4.QtGui.QWidget):
+class Show_frames_widget(QtGui.QWidget):
     def __init__(self, filename, config = config_default):
         super(Show_frames_widget, self).__init__()
         
@@ -1594,7 +1598,7 @@ class Show_frames_widget(PyQt4.QtGui.QWidget):
         so we should scatter plot the coordinates accourdingly
         """
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1665,7 +1669,7 @@ class Show_frames_widget(PyQt4.QtGui.QWidget):
         vline.sigPositionChanged.connect(replot_frame)
         f.close()
 
-class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
+class Show_frames_selection_widget(QtGui.QWidget):
     def __init__(self, filename):
         super(Show_frames_selection_widget, self).__init__()
         
@@ -1674,7 +1678,7 @@ class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
 
     def initUI(self):
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1735,7 +1739,7 @@ class Show_frames_selection_widget(PyQt4.QtGui.QWidget):
         vline.sigPositionChanged.connect(replot_frame)
         f.close()
 
-class Select_frames_widget(PyQt4.QtGui.QWidget):
+class Select_frames_widget(QtGui.QWidget):
     """
     Draw a scatter plot of the X-Y coordinates in f[R]
     """
@@ -1749,7 +1753,7 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
 
     def initUI(self):
         # Make a grid layout
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         
         # add the layout to the central widget
         self.setLayout(layout)
@@ -1821,10 +1825,10 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         courner = [X.min()-1.5*span[0], Y.min()-1.5*span[1]]
         self.roi = pg.RectROI(courner, span)
         self.roi.setZValue(10)                       # make sure ROI is drawn above image
-        ROI_button_good   = PyQt4.QtGui.QPushButton('good frames')
-        ROI_button_bad    = PyQt4.QtGui.QPushButton('bad frames')
-        ROI_button_toggle = PyQt4.QtGui.QPushButton('toggle frames')
-        write_button      = PyQt4.QtGui.QPushButton('write to file')
+        ROI_button_good   = QtGui.QPushButton('good frames')
+        ROI_button_bad    = QtGui.QPushButton('bad frames')
+        ROI_button_toggle = QtGui.QPushButton('toggle frames')
+        write_button      = QtGui.QPushButton('write to file')
         ROI_button_good.clicked.connect(   lambda : self.mask_ROI(self.roi, 0))
         ROI_button_bad.clicked.connect(    lambda : self.mask_ROI(self.roi, 1))
         ROI_button_toggle.clicked.connect( lambda : self.mask_ROI(self.roi, 2))
@@ -1838,7 +1842,7 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
         if self.s12 is not None :
             scatter_plot.addItem(self.s12)
         
-        hbox = PyQt4.QtGui.QHBoxLayout()
+        hbox = QtGui.QHBoxLayout()
         hbox.addWidget(ROI_button_good)
         hbox.addWidget(ROI_button_bad)
         hbox.addWidget(ROI_button_toggle)
@@ -1884,7 +1888,7 @@ class Select_frames_widget(PyQt4.QtGui.QWidget):
     
         self.update_selected_points()
 
-class Run_and_log_command(PyQt4.QtGui.QWidget):
+class Run_and_log_command(QtGui.QWidget):
     """
     run a command and send a signal when it complete, or it has failed.
 
@@ -1892,7 +1896,7 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
     
     realtime streaming of the terminal output has so proved to be fruitless
     """
-    finished_signal = PyQt4.QtCore.pyqtSignal(bool)
+    finished_signal = QtCore.pyqtSignal(bool)
     
     def __init__(self):
         super(Run_and_log_command, self).__init__()
@@ -1906,22 +1910,22 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
         and another showing the status of the process
         """
         # Make a grid layout
-        #layout = PyQt4.QtGui.QGridLayout()
-        hbox = PyQt4.QtGui.QHBoxLayout()
+        #layout = QtGui.QGridLayout()
+        hbox = QtGui.QHBoxLayout()
         
         # add the layout to the central widget
         self.setLayout(hbox)
         
         # show the command being executed
-        self.command_label0 = PyQt4.QtGui.QLabel(self)
+        self.command_label0 = QtGui.QLabel(self)
         self.command_label0.setText('<b>Command:</b>')
-        self.command_label  = PyQt4.QtGui.QLabel(self)
+        self.command_label  = QtGui.QLabel(self)
         #self.command_label.setMaximumSize(50, 250)
          
         # show the status of the command
-        self.status_label0  = PyQt4.QtGui.QLabel(self)
+        self.status_label0  = QtGui.QLabel(self)
         self.status_label0.setText('<b>Status:</b>')
-        self.status_label   = PyQt4.QtGui.QLabel(self)
+        self.status_label   = QtGui.QLabel(self)
         
         # add to layout
         hbox.addWidget(self.status_label0)
@@ -1943,7 +1947,7 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
         self.p = Popen(shlex.split(cmd), stdout = PIPE, stderr = PIPE)
         
         # start a Qt timer to update the status
-        PyQt4.QtCore.QTimer.singleShot(self.polling_interval, self.update_status)
+        QtCore.QTimer.singleShot(self.polling_interval, self.update_status)
     
     def update_status(self):
         status = self.p.poll()
@@ -1951,7 +1955,7 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
             self.status_label.setText('Running')
              
             # start a Qt timer to update the status
-            PyQt4.QtCore.QTimer.singleShot(self.polling_interval, self.update_status)
+            QtCore.QTimer.singleShot(self.polling_interval, self.update_status)
         
         elif status is 0 :
             self.status_label.setText('Finished')
@@ -1974,7 +1978,7 @@ class Run_and_log_command(PyQt4.QtGui.QWidget):
             # emmit a signal when complete
             self.finished_signal.emit(False)
 
-class Mask_maker_widget(PyQt4.QtGui.QWidget):
+class Mask_maker_widget(QtGui.QWidget):
     """
     """
     cspad_psana_shape = (4, 8, 185, 388)
@@ -2154,7 +2158,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
         ## save mask button
         #################################
-        save_button = PyQt4.QtGui.QPushButton('save mask')
+        save_button = QtGui.QPushButton('save mask')
         save_button.clicked.connect(self.save_mask)
 
         # rectangular ROI selection
@@ -2162,7 +2166,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.roi = pg.RectROI([-200,-200], [100, 100])
         self.plot.addItem(self.roi)
         self.roi.setZValue(10)                       # make sure ROI is drawn above image
-        ROI_button = PyQt4.QtGui.QPushButton('mask rectangular ROI')
+        ROI_button = QtGui.QPushButton('mask rectangular ROI')
         ROI_button.clicked.connect(lambda : self.mask_ROI(self.roi))
 
         # circular ROI selection
@@ -2170,22 +2174,22 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         self.roi_circle = pg.CircleROI([-200,200], [101, 101])
         self.plot.addItem(self.roi_circle)
         self.roi.setZValue(10)                       # make sure ROI is drawn above image
-        ROI_circle_button = PyQt4.QtGui.QPushButton('mask circular ROI')
+        ROI_circle_button = QtGui.QPushButton('mask circular ROI')
         ROI_circle_button.clicked.connect(lambda : self.mask_ROI_circle(self.roi_circle))
 
         # histogram mask button
         #################################
-        hist_button = PyQt4.QtGui.QPushButton('mask outside histogram')
+        hist_button = QtGui.QPushButton('mask outside histogram')
         hist_button.clicked.connect(self.mask_hist)
 
         # toggle / mask / unmask checkboxes
         #################################
-        self.toggle_checkbox   = PyQt4.QtGui.QCheckBox('toggle')
-        self.mask_checkbox     = PyQt4.QtGui.QCheckBox('mask')
-        self.unmask_checkbox   = PyQt4.QtGui.QCheckBox('unmask')
+        self.toggle_checkbox   = QtGui.QCheckBox('toggle')
+        self.mask_checkbox     = QtGui.QCheckBox('mask')
+        self.unmask_checkbox   = QtGui.QCheckBox('unmask')
         self.toggle_checkbox.setChecked(True)   
         
-        self.toggle_group      = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
+        self.toggle_group      = QtGui.QButtonGroup()#"masking behaviour")
         self.toggle_group.addButton(self.toggle_checkbox)   
         self.toggle_group.addButton(self.mask_checkbox)   
         self.toggle_group.addButton(self.unmask_checkbox)   
@@ -2193,12 +2197,12 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
         
         # toggle / mask / unmask checkboxes
         #################################
-        self.toggle_checkbox   = PyQt4.QtGui.QCheckBox('toggle')
-        self.mask_checkbox     = PyQt4.QtGui.QCheckBox('mask')
-        self.unmask_checkbox   = PyQt4.QtGui.QCheckBox('unmask')
+        self.toggle_checkbox   = QtGui.QCheckBox('toggle')
+        self.mask_checkbox     = QtGui.QCheckBox('mask')
+        self.unmask_checkbox   = QtGui.QCheckBox('unmask')
         self.toggle_checkbox.setChecked(True)   
         
-        self.toggle_group      = PyQt4.QtGui.QButtonGroup()#"masking behaviour")
+        self.toggle_group      = QtGui.QButtonGroup()#"masking behaviour")
         self.toggle_group.addButton(self.toggle_checkbox)   
         self.toggle_group.addButton(self.mask_checkbox)   
         self.toggle_group.addButton(self.unmask_checkbox)   
@@ -2206,21 +2210,21 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
         # mouse hover ij value label
         #################################
-        ij_label = PyQt4.QtGui.QLabel()
+        ij_label = QtGui.QLabel()
         disp = 'ss fs {0:5} {1:5}   value {2:2}'.format('-', '-', '-')
         ij_label.setText(disp)
         self.plot.scene.sigMouseMoved.connect( lambda pos: self.mouseMoved(ij_label, pos) )
         
         # unbonded pixels checkbox
         #################################
-        unbonded_checkbox = PyQt4.QtGui.QCheckBox('unbonded pixels')
+        unbonded_checkbox = QtGui.QCheckBox('unbonded pixels')
         unbonded_checkbox.stateChanged.connect( self.update_mask_unbonded )
         if self.cspad_shape_flag == 'other' :
             unbonded_checkbox.setEnabled(False)
         
         # asic edges checkbox
         #################################
-        edges_checkbox = PyQt4.QtGui.QCheckBox('asic edges')
+        edges_checkbox = QtGui.QCheckBox('asic edges')
         edges_checkbox.stateChanged.connect( self.update_mask_edges )
         if self.cspad_shape_flag == 'other' :
             edges_checkbox.setEnabled(False)
@@ -2231,7 +2235,7 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
         # Create a grid layout to manage the widgets size and position
         #################################
-        layout = PyQt4.QtGui.QGridLayout()
+        layout = QtGui.QGridLayout()
         self.setLayout(layout)
 
         ## Add widgets to the layout in their proper positions
@@ -2350,10 +2354,10 @@ class Mask_maker_widget(PyQt4.QtGui.QWidget):
 
 def run_and_log_command():
     signal.signal(signal.SIGINT, signal.SIG_DFL) # allow Control-C
-    app = PyQt4.QtGui.QApplication([])
+    app = QtGui.QApplication([])
     
     # Qt main window
-    Mwin = PyQt4.QtGui.QMainWindow()
+    Mwin = QtGui.QMainWindow()
     Mwin.setWindowTitle('run and log command')
     
     cw = Run_and_log_command()

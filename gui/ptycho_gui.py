@@ -111,7 +111,7 @@ class Gui(QtGui.QTabWidget):
         self.tabs.append( Show_stitch_widget(filename, params) )
         self.addTab(self.tabs[-1], "show stitch")
 
-        # Show gpu stitch tab
+        # Show cpu stitch tab
         #####################
         # load the default config file
         params = load_config(filename, name='cpu_stitch.ini')
@@ -121,16 +121,16 @@ class Gui(QtGui.QTabWidget):
         # Show EMC tab
         #####################
         # load the default config file
-        params = load_config(filename, name='make_pixel_shifts.ini')
-        self.tabs.append( Show_make_pixel_shifts_widget(filename, params) )
-        self.addTab(self.tabs[-1], "make pixel shifts")
+        #params = load_config(filename, name='make_pixel_shifts.ini')
+        #self.tabs.append( Show_make_pixel_shifts_widget(filename, params) )
+        #self.addTab(self.tabs[-1], "make pixel shifts")
 
         # Show EMC tab
         #####################
         # load the default config file
-        params = load_config(filename, name='EMC.ini')
-        self.tabs.append( Show_EMC_widget(filename, params) )
-        self.addTab(self.tabs[-1], "EMC stitcher")
+        #params = load_config(filename, name='EMC.ini')
+        #self.tabs.append( Show_EMC_widget(filename, params) )
+        #self.addTab(self.tabs[-1], "EMC stitcher")
 
         # Show gpu stitch tab
         #####################
@@ -147,9 +147,9 @@ class Gui(QtGui.QTabWidget):
         # defocus tab
         #################
         # load the default config file
-        params = load_config(filename, name='defocus.ini')
-        self.tabs.append( Defocus_widget(filename, params) )
-        self.addTab(self.tabs[-1], "defocus")
+        #params = load_config(filename, name='defocus.ini')
+        #self.tabs.append( Defocus_widget(filename, params) )
+        #self.addTab(self.tabs[-1], "defocus")
         """
         # probe maker tab
         #################

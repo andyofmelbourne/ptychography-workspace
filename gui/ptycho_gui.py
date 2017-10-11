@@ -121,9 +121,9 @@ class Gui(QtGui.QTabWidget):
         # Show EMC tab
         #####################
         # load the default config file
-        #params = load_config(filename, name='make_pixel_shifts.ini')
-        #self.tabs.append( Show_make_pixel_shifts_widget(filename, params) )
-        #self.addTab(self.tabs[-1], "make pixel shifts")
+        params = load_config(filename, name='make_pixel_shifts.ini')
+        self.tabs.append( Show_make_pixel_shifts_widget(filename, params) )
+        self.addTab(self.tabs[-1], "make pixel shifts")
 
         # Show EMC tab
         #####################

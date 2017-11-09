@@ -1,4 +1,72 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
+def parse_parameters(config):
+    """
+    Parse values from the configuration file and sets internal parameter accordingly
+    The parameter dictionary is made available to both the workers and the master nodes
+    The parser tries to interpret an entry in the configuration file as follows:
+    - If the entry starts and ends with a single quote, it is interpreted as a string
+    - If the entry is the word None, without quotes, then the entry is interpreted as NoneType
+    - If the entry is the word False, without quotes, then the entry is interpreted as a boolean False
+    - If the entry is the word True, without quotes, then the entry is interpreted as a boolean True
+    - If non of the previous options match the content of the entry, the parser tries to interpret the entry in order as:
+        - An integer number
+        - A float number
+        - A string
+      The first choice that succeeds determines the entry type
+    """
+
+    monitor_params = {}
+
+    for sect in config.sections():
+        monitor_params[sect]={}
+        for op in config.options(sect):
+            monitor_params[sect][op] = config.get(sect, op)
+            if monitor_params[sect][op].startswith("'") and monitor_params[sect][op].endswith("'"):
+                monitor_params[sect][op] = monitor_params[sect][op][1:-1]
+                continue
+            if monitor_params[sect][op] == 'None':
+                monitor_params[sect][op] = None
+                continue
+            if monitor_params[sect][op] == 'False':
+                monitor_params[sect][op] = False
+                continue
+            if monitor_params[sect][op] == 'True':
+                monitor_params[sect][op] = True
+                continue
+            try:
+                monitor_params[sect][op] = int(monitor_params[sect][op])
+                continue
+            except :
+                try :
+                    monitor_params[sect][op] = float(monitor_params[sect][op])
+                    continue
+                except :
+                    # attempt to pass as an array of ints e.g. '1, 2, 3'
+                    try :
+                        l = monitor_params[sect][op].split(',')
+                        temp = int(l[0])
+                        monitor_params[sect][op] = np.array(l, dtype=np.int)
+                        continue
+                    except :
+                        try :
+                            l = monitor_params[sect][op].split(',')
+                            temp = float(l[0])
+                            monitor_params[sect][op] = np.array(l, dtype=np.float)
+                            continue
+                        except :
+                            try :
+                                l = monitor_params[sect][op].split(',')
+                                if len(l) > 1 :
+                                    monitor_params[sect][op] = [i.strip() for i in l]
+                                continue
+                            except :
+                                pass
+
+    return monitor_params
 
 Zernike_index_names = {
         (0, 0)  : "Piston",
@@ -356,7 +424,7 @@ def pascal(m):
     Print Pascal's triangle to test binomial()
     """
     for x in range(m + 1):
-        print [binomial(x, y) for y in range(x + 1)]
+        print([binomial(x, y) for y in range(x + 1)])
 
 def make_Zernike_polynomial_cartesian(n, m, order = None):
     """

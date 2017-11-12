@@ -72,12 +72,17 @@ def parse_cmdline_args():
     return args, params['example']
 
 def make_object(**kwargs):
-    # transmission of the object
-    O = scipy.misc.ascent().astype(np.float)
-    
-    # scale
-    O /= O.max()
+    # transmission of the object: 0 --> 255
+    O0 = scipy.misc.ascent().astype(np.float)
 
+    # scale: 0.8 --> 1.
+    O0 = O0 * 0.2 / O0.max() + 0.8
+    
+    # padd
+    O = np.ones((round(1.5*O0.shape[0]), round(1.5*O0.shape[1])), dtype=np.float)
+    s = [round(O0.shape[0]/4.)-1, round(O0.shape[1]/4.)-1]
+    O[s[0] :s[0] + O0.shape[0], s[1] : s[1] + O0.shape[1]] = O0
+    
     # sample plane sampling
     dx  = kwargs['pix_size'] * kwargs['focal_length'] / kwargs['det_dist']
     
@@ -93,18 +98,33 @@ def make_object(**kwargs):
     from scipy.interpolate import RectBivariateSpline
     rbs = RectBivariateSpline(y, x, O, bbox = [y.min(), y.max(), x.min(), x.max()], s = 1., kx=1, ky=1)
     O = rbs(yd, xd)
+
+    # smooth a little
+    from scipy.ndimage import gaussian_filter
+    O = gaussian_filter(O, 1.0, mode='constant') 
     return O
 
 def make_probe(**kwargs):
-    # aperture 
-    shape = (128,128)
-    roi   = [30, 100, 20, 108]
-    #roi   = [0, 128, 0, 128]
+    shape = (int(kwargs['det_shape'][0]), int(kwargs['det_shape'][1]))
     
-    # probe
-    P = np.zeros((128,128), dtype=np.float) 
-    P[roi[0]:roi[1], roi[2]:roi[3]] = 1.
+    # aperture 
+    X = kwargs['det_dist'] * kwargs['lens_size'] / kwargs['focal_length']
+    X_pix = X / kwargs['pix_size']
 
+    # centre the aperture in the detector
+    roi = [0, shape[0], 0, shape[1]]
+    if X_pix < shape[0]:
+        roi[0] = round((shape[0]-X_pix)/2)
+        roi[1] = round(shape[0] - (shape[0]-X_pix)/2)
+    
+    if X_pix < shape[1]:
+        roi[2] = round((shape[1]-X_pix)/2)
+        roi[3] = round(shape[1] - (shape[1]-X_pix)/2)
+
+    # probe
+    P = np.zeros(shape, dtype=np.float) 
+    P[roi[0]:roi[1], roi[2]:roi[3]] = 1.
+    
     # smooth the edges 
     from scipy.ndimage import gaussian_filter
     P = gaussian_filter(P, 2.0, mode='constant') + 0J
@@ -123,12 +143,11 @@ def make_probe(**kwargs):
     P *= ex
     """
     
-    back_prop = make_back_prop(P.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'])
+    back_prop = make_prop(P.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'], inverse=True)
     
     # real-space probe
     Ps = back_prop(P)
     return Ps, P
-
 
 def _make_frames(O, Ps, forward_prop, pos):
     # in pixels
@@ -147,7 +166,7 @@ def _make_frames(O, Ps, forward_prop, pos):
     
     return frames
 
-def make_forward_prop(shape, z, df, du, en):
+def make_prop(shape, z, df, du, en, inverse=False):
     """
     wave_det = IFFT[ FFT[wav_sample] * e^{-i \pi \lambda z_eff (q * z / df)**2} ]
     where q_n = n z/N df du, x_n = n du
@@ -156,32 +175,23 @@ def make_forward_prop(shape, z, df, du, en):
     from scipy import constants as sc
     wav = sc.h * sc.c / en
 
-    #dx    = df * du / z
     dx    = du 
     z_eff = df * (z-df) / z
+
+    # check if the exponential is adequately sampled
+    df_min = z**2 / (np.min(shape) * du**2 / (2*wav) + z)
+    if df < df_min :
+        print("WARNING: defocus", df,
+              " is less than the minimum value:", 
+              df_min, " required for adequate sampling of the propagator.")
+    
     qi, qj = np.fft.fftfreq(shape[0], dx), np.fft.fftfreq(shape[1], dx)
     qi, qj = np.meshgrid(qi, qj, indexing='ij')
     q2 = (z/df)**2 * (qi**2 + qj**2)
     ex = np.exp(-1.0J * np.pi * wav * z_eff * q2)
-
-    prop = lambda x : np.fft.ifftn(np.fft.fftn(x) * ex)
-    return prop
-
-def make_back_prop(shape, z, df, du, en):
-    """
-    wave_det = IFFT[ FFT[wav_sample] * e^{-i \pi \lambda z_eff (q * z / df)**2} ]
-    where q_n = n z/N df du, x_n = n du
-    """
-    # wavelength
-    from scipy import constants as sc
-    wav = sc.h * sc.c / en
-
-    dx    = du 
-    z_eff = df * (z-df) / z
-    qi, qj = np.fft.fftfreq(shape[0], dx), np.fft.fftfreq(shape[1], dx)
-    qi, qj = np.meshgrid(qi, qj, indexing='ij')
-    q2 = (z/df)**2 * (qi**2 + qj**2)
-    ex = np.exp(1.0J * np.pi * wav * z_eff * q2)
+    
+    if inverse :
+        ex = ex.conj()
     
     prop = lambda x : np.fft.ifftn(np.fft.fftn(x) * ex)
     return prop
@@ -209,7 +219,7 @@ def make_frames(**kwargs):
     # make the forward propagator
     
     #forward_prop = lambda x : x
-    forward_prop = make_forward_prop(Ps.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'])
+    forward_prop = make_prop(Ps.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'])
      
     frames = _make_frames(O, Ps, forward_prop, (y_n/dx, x_n/dx))
     

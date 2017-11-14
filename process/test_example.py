@@ -71,6 +71,15 @@ def parse_cmdline_args():
     
     return args, params['example']
 
+def add_poisson_noise(frames, Pd, n):
+    # normalise
+    norm   = np.sum(np.abs(Pd)**2)
+    frames = frames / norm
+
+    # Poisson sampling
+    frames = np.random.poisson(lam = float(n) * frames).astype(np.int)
+    return frames
+
 def make_object(**kwargs):
     # transmission of the object: 0 --> 255
     O0 = scipy.misc.ascent().astype(np.float)
@@ -202,11 +211,16 @@ def make_frames(**kwargs):
     x_n = -n (Xo - Xp)/N, 
     N = no. of positions, Xo = object size, Xp = probe size
     """
+    # make the sample positions
+    #--------------------------
     O = make_object(**kwargs)
     
+    # make the probe
+    #---------------
     Ps, Pd = make_probe(**kwargs)
     
     # make the sample positions
+    #--------------------------
     dx  = kwargs['pix_size'] * kwargs['focal_length'] / kwargs['det_dist']
     Xp  = np.array(Ps.shape) * dx # probe dimensions
     
@@ -215,18 +229,42 @@ def make_frames(**kwargs):
     
     y_n = np.linspace(0, -(kwargs['o_size'] - Xp[0]), kwargs['ny'])
     x_n = np.linspace(0, -(kwargs['o_size'] - Xp[1]), kwargs['nx'])
-    
+     
     # make the forward propagator
-    
-    #forward_prop = lambda x : x
+    #----------------------------
     forward_prop = make_prop(Ps.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'])
      
+    # make the frames
+    #----------------
     frames = _make_frames(O, Ps, forward_prop, (y_n/dx, x_n/dx))
-    
+     
+    # Poisson sampling
+    #-----------------
+    frames = add_poisson_noise(frames, Pd, kwargs['photons'])
     return Pd, Ps, frames
 
+def h5w(f, key, data):
+    if key in f :
+        del f[key]
+    f[key] = data
+
+
+def write_data(filename, Pd, frames, **params):
+    """
+    """
+    f = h5py.File(filename, 'a')
+    
+    h5w(f, '/entry_1/data_1/data', frames.astype(np.uint16))
+    h5w(f, '/entry_1/instrument_1/detector_1/distance', params['det_dist'])
+    h5w(f, '/entry_1/instrument_1/detector_1/x_pixel_size', params['pix_size'])
+    h5w(f, '/entry_1/instrument_1/detector_1/y_pixel_size', params['pix_size'])
+    f.close()
 
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
     
-    P, Ps, frames = make_frames(**params)
+    # make the frames
+    Pd, Ps, frames = make_frames(**params)
+    
+    # write the frames
+    write_data(args.filename, Pd, frames, **params)

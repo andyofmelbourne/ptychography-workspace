@@ -1,3 +1,8 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 """
 Fit Zernike polynomials to the aberration function phi(q):
     pupil(x) = |A(x)| x exp( - 2 pi i / lamb * phi(x) )
@@ -36,15 +41,15 @@ import numpy as np
 import sys, os
 
 import time
-import ConfigParser
+try :
+    import ConfigParser as configparser 
+except ImportError :
+    import configparser
 
-root = os.path.split(os.path.abspath(__file__))[0]
-root = os.path.split(root)[0]
-sys.path.append(root)
-sys.path.append(os.path.join(root, 'utils'))
-sys.path.append(os.path.join(root, 'process'))
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(root, 'utils'))
+sys.path.insert(0, os.path.join(root, 'process'))
 
-from Ptychography import utils as Putils
 import utils 
 import optics 
 from numpy.polynomial import polynomial as P
@@ -104,12 +109,12 @@ def calculate_Zernike_coeff(phase, orders, dq, basis=None, basis_grid=None, y=No
     # get the Zernike fit in a polynomial basis
     z_poly = np.sum( [z[i] * basis[i] for i in range(len(basis))], axis=0)
 
-    print '\n\n'
-    print 'Zernike coefficients'
-    print '--------------------'
-    print 'Noll index, weight'
+    print('\n\n')
+    print('Zernike coefficients')
+    print('--------------------')
+    print('Noll index, weight')
     for i in range(orders):
-        print i+1, z[i]
+        print(i+1, z[i])
     return z, z_poly, basis, basis_grid, y, x
 
 def get_geometric_aberrations(phase, y, x, dq, wavelen, \
@@ -129,8 +134,8 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
     # the aberration terms
     # - remove the aberrations as we go
     
-    print '\nCalculating and removing geometric aberrations:'
-    print 'variance of phase:', np.var(phase)
+    print('\nCalculating and removing geometric aberrations:')
+    print('variance of phase:', np.var(phase))
     
     # defocus
     # -------
@@ -143,8 +148,8 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
     
     if remove_defocus :
         phase -= defocus * phi_df
-        print '\nRemoving defocus', defocus
-        print 'variance of phase:', np.var(phase)
+        print('\nRemoving defocus', defocus)
+        print('variance of phase:', np.var(phase))
 
     # astigmatism 
     # ---------------------
@@ -153,8 +158,8 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
 
     if remove_astigmatism :
         phase -= astigmatism * phi_as
-        print '\nRemoving astigmatism', astigmatism
-        print 'variance of phase:', np.var(phase)
+        print('\nRemoving astigmatism', astigmatism)
+        print('variance of phase:', np.var(phase))
 
     # tilt x (or fs)
     # ---------------------
@@ -163,8 +168,8 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
     
     if remove_tilt :
         phase -= tilt_x * phi_tx
-        print '\nRemoving tilt_x', tilt_x
-        print 'variance of phase:', np.var(phase)
+        print('\nRemoving tilt_x', tilt_x)
+        print('variance of phase:', np.var(phase))
 
     # tilt y (or ss)
     # ---------------------
@@ -173,8 +178,8 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
     
     if remove_tilt :
         phase -= tilt_y * phi_ty
-        print '\nRemoving tilt_y', tilt_y
-        print 'variance of phase:', np.var(phase)
+        print('\nRemoving tilt_y', tilt_y)
+        print('variance of phase:', np.var(phase))
 
     # piston
     # ---------------------
@@ -182,19 +187,19 @@ def get_geometric_aberrations(phase, y, x, dq, wavelen, \
     
     if remove_piston :
         phase -= piston
-        print '\nRemoving piston', piston
-        print 'variance of phase:', np.var(phase)
+        print('\nRemoving piston', piston)
+        print('variance of phase:', np.var(phase))
     
     
-    print '\n\n'
-    print 'Geometric aberrations'
-    print '---------------------'
-    print 'defocus       :', defocus, '(m) (+ve is overfocus)'
-    print 'defocus fs    :', defocus_x, '(m)'
-    print 'defocus ss    :', defocus_y, '(m)'
-    print 'astigmatism   :', astigmatism, '(m)'
-    print 'tilt fs       :', tilt_x, '(rad) relative to centre of roi'
-    print 'tilt ss       :', tilt_y, '(rad) relative to centre of roi'
+    print('\n\n')
+    print('Geometric aberrations')
+    print('---------------------')
+    print('defocus       :', defocus, '(m) (+ve is overfocus)')
+    print('defocus fs    :', defocus_x, '(m)')
+    print('defocus ss    :', defocus_y, '(m)')
+    print('astigmatism   :', astigmatism, '(m)')
+    print('tilt fs       :', tilt_x, '(rad) relative to centre of roi')
+    print('tilt ss       :', tilt_y, '(rad) relative to centre of roi')
 
     return phase
 
@@ -224,10 +229,10 @@ def parse_cmdline_args():
         raise NameError('config file does not exist: ' + args.config)
     
     # process config file
-    config = ConfigParser.ConfigParser()
+    config = configparser.ConfigParser()
     config.read(args.config)
     
-    params = Putils.parse_parameters(config)
+    params = utils.parse_parameters(config)
     
     return args, params
 
@@ -313,11 +318,11 @@ if __name__ == '__main__':
 
     # get the focus spot
     if W is not None :
-        print '\ncalculating focus...'
+        print('\ncalculating focus...')
         pupil = W * np.exp(1J * phase)
         P_focus = get_focus_probe(pupil)
-        print 'Real space pixel size   :', 1./ (np.array(P_focus.shape) * dq)
-        print 'Real space Field-of-view:', 1./ dq
+        print('Real space pixel size   :', 1./ (np.array(P_focus.shape) * dq))
+        print('Real space Field-of-view:', 1./ dq)
 
     # write the result 
     ##################
@@ -329,7 +334,7 @@ if __name__ == '__main__':
         outputdir = os.path.split(args.filename)[0]
     
     if group not in g:
-        print g.keys()
+        print(g.keys())
         g.create_group(group)
     
     # focus probe
@@ -370,4 +375,4 @@ if __name__ == '__main__':
         import shutil
         shutil.copy(args.config, outputdir)
     except Exception as e :
-        print e
+        print(e)

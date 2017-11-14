@@ -46,6 +46,11 @@ r_i = R_i * M / pixel_size
 
 where R_i are the sample shift coordinates in meters
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
 import sys, os
 
 import numpy as np
@@ -54,18 +59,17 @@ import scipy.constants as sc
 import time
 from scipy import ndimage
 
-import ConfigParser
+try :
+    import ConfigParser as configparser 
+except ImportError :
+    import configparser
 
-root = os.path.split(os.path.abspath(__file__))[0]
-root = os.path.split(root)[0]
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(root, 'utils'))
+sys.path.insert(0, os.path.join(root, 'process'))
 
-sys.path.append(root)
-sys.path.append(os.path.join(root, 'utils'))
-sys.path.append(os.path.join(root, 'process'))
-
-import Ptychography.ptychography.era as era
-from Ptychography import utils
-import utils as utils2
+import utils
+from get_Fresnel_pixel_shifts_cxi import get_Fresnel_pixel_shifts_cxi
 
 from mpi4py import MPI
 
@@ -79,7 +83,7 @@ def make_P_heatmap(P, R, shape):
     #P_temp[:P.shape[0], :P.shape[1]] = (P.conj() * P).real
     P_temp = (P.conj() * P).real
     for r in R : 
-        #P_heatmap += multiroll(P_temp, [-r[0], -r[1]]) 
+        #P_heatmap += utils.multiroll(P_temp, [-r[0], -r[1]]) 
         P_heatmap[-r[0]:P.shape[0]-r[0], -r[1]:P.shape[1]-r[1]] += P_temp
     return P_heatmap
 
@@ -87,7 +91,7 @@ def make_O_heatmap(O, R, shape):
     O_heatmap = np.zeros(O.shape, dtype = O.real.dtype)
     O_temp    = (O * O.conj()).real
     for r in R : 
-        O_heatmap += era.multiroll(O_temp, [r[0], r[1]]) 
+        O_heatmap += utils.multiroll(O_temp, [r[0], r[1]]) 
     return O_heatmap[:shape[0], :shape[1]]
 
 def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBLE, MPI_c_dtype = MPI.DOUBLE):
@@ -99,7 +103,6 @@ def psup_P(exits, O, R, O_heatmap = None, alpha = 1.0e-10, MPI_dtype = MPI.DOUBL
     # (we must set O_heatmap = None when the object/coords has changed)
     if O_heatmap is None : 
         O_heatmapT = np.ascontiguousarray(make_O_heatmap(O, R, PT.shape))
-        #O_heatmapT = era.make_O_heatmap(O, R, PT.shape) produces a non-contig. array for some reason
         O_heatmap  = np.empty_like(O_heatmapT)
         comm.Allreduce([O_heatmapT, MPI_dtype], \
                        [O_heatmap,  MPI_dtype], \
@@ -172,9 +175,7 @@ def OP_sup(I, R, whitefield, O, mask, iters=4):
         #              V = K + R[:, 1].max() - R[:, 1].min()
         shape = (I.shape[1] + R[:, 0].max() - R[:, 0].min(),\
                  I.shape[2] + R[:, 1].max() - R[:, 1].min())
-        print(shape)
         O = np.ones(shape, dtype = np.float64)
-        print 'O.shape', O.shape
 
     # subtract an overall offset from R's
     R[:, 0] -= R[:, 0].max()
@@ -188,7 +189,7 @@ def OP_sup(I, R, whitefield, O, mask, iters=4):
         O0 = O.copy()
         O, P_heatmap = psup_O(I, P, R, O.shape, None)
         P, O_heatmap = psup_P(I, O, R)
-        print i, np.sum( (O0 - O)**2 )
+        print(i, np.sum( (O0 - O)**2 ))
     return O, P
 
 
@@ -218,7 +219,7 @@ def parse_cmdline_args():
         raise NameError('config file does not exist: ' + args.config)
     
     # process config file
-    config = ConfigParser.ConfigParser()
+    config = configparser.ConfigParser()
     config.read(args.config)
     
     params = utils.parse_parameters(config)
@@ -264,9 +265,7 @@ if __name__ == '__main__':
     # R
     # ------------------
     # get the pixel shift coordinates along ss and fs
-    R, du = utils2.get_Fresnel_pixel_shifts_cxi(f, good_frames, params['stitch']['defocus'], offset_to_zero=True)
-    print(R)
-    print(du)
+    R, du = get_Fresnel_pixel_shifts_cxi(f, good_frames, params['stitch']['defocus'], offset_to_zero=True)
     
     # allow for astigmatism
     if params['stitch']['defocus_fs'] is not None :
@@ -294,15 +293,18 @@ if __name__ == '__main__':
     # ------------------
     # mask hot / dead pixels
     if params['stitch']['mask'] is None :
-        bit_mask = f['entry_1/instrument_1/detector_1/mask'].value
-        # hot (4) and dead (8) pixels
-        mask     = ~np.bitwise_and(bit_mask, 4 + 8).astype(np.bool) 
+        if 'entry_1/instrument_1/detector_1/mask' in f:
+            bit_mask = f['entry_1/instrument_1/detector_1/mask'].value
+            # hot (4) and dead (8) pixels
+            mask     = ~np.bitwise_and(bit_mask, 4 + 8).astype(np.bool) 
+        else :
+            mask     = np.ones(f['/entry_1/data_1/data'].shape[1:], dtype=np.bool)
     else :
         mask = f[params['stitch']['mask']].value
     mask     = mask[ROI[0]:ROI[1], ROI[2]:ROI[3]]
 
     f.close()
-
+    
     #####################
     # Refine O and W
     #####################
@@ -329,7 +331,7 @@ if __name__ == '__main__':
     
     group = params['stitch']['h5_group']
     if group not in g:
-        print g.keys()
+        print(g.keys())
         g.create_group(group)
 
     key = params['stitch']['h5_group']+'/O'
@@ -342,19 +344,6 @@ if __name__ == '__main__':
         del g[key]
     g[key] = W
     
-    """
-    key = params['stitch']['h5_group']+'/R'
-    if key in g :
-        del g[key]
-    print 'R shape:', R.shape
-    g[key] = R
-
-    key = params['stitch']['h5_group']+'/defocus'
-    if key in g :
-        del g[key]
-    g[key] = params['stitch']['defocus']
-    """
-    
     g.close()
     
     # copy the config file
@@ -363,4 +352,4 @@ if __name__ == '__main__':
         import shutil
         shutil.copy(args.config, outputdir)
     except Exception as e :
-        print e
+        print(e)

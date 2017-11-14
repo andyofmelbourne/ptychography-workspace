@@ -73,9 +73,9 @@ def parse_cmdline_args():
 
 def add_poisson_noise(frames, Pd, n):
     # normalise
-    norm   = np.sum(np.abs(Pd)**2)
+    norm   = np.sum(np.abs(Pd)**2) 
     frames = frames / norm
-
+    
     # Poisson sampling
     frames = np.random.poisson(lam = float(n) * frames).astype(np.int)
     return frames
@@ -93,7 +93,7 @@ def make_object(**kwargs):
     O[s[0] :s[0] + O0.shape[0], s[1] : s[1] + O0.shape[1]] = O0
     
     # sample plane sampling
-    dx  = kwargs['pix_size'] * kwargs['focal_length'] / kwargs['det_dist']
+    dx  = kwargs['pix_size'] * kwargs['defocus'] / kwargs['det_dist']
     
     # interpolate
     #############
@@ -161,17 +161,20 @@ def make_probe(**kwargs):
 def _make_frames(O, Ps, forward_prop, pos):
     # in pixels
     y_n, x_n = pos
+
+    # keep y_n and x_n in array bounds
+    y_n -= y_n.max()
+    x_n -= x_n.max()
     
     # make frames 
     frames = []
     i, j = np.indices(Ps.shape)
-    for y in y_n :
-        for x in x_n :
-            ss = np.rint(i - y).astype(np.int)
-            fs = np.rint(j - x).astype(np.int)
-            frame = forward_prop(Ps * O[ss, fs])
-            frame = np.abs(frame)**2
-            frames.append(frame) 
+    for y, x in zip(y_n, x_n):
+        ss = np.rint(i - y).astype(np.int)
+        fs = np.rint(j - x).astype(np.int)
+        frame = forward_prop(Ps * O[ss, fs])
+        frame = np.abs(frame)**2
+        frames.append(frame) 
     
     return frames
 
@@ -221,14 +224,17 @@ def make_frames(**kwargs):
     
     # make the sample positions
     #--------------------------
-    dx  = kwargs['pix_size'] * kwargs['focal_length'] / kwargs['det_dist']
+    dx  = kwargs['pix_size'] * kwargs['defocus'] / kwargs['det_dist']
     Xp  = np.array(Ps.shape) * dx # probe dimensions
     
     if kwargs['o_size'] < np.max(Xp) :
         raise ValueError('Error: o_size is less than the probe size... Make o_size bigger than '+str(np.max(Xp)))
     
     y_n = np.linspace(0, -(kwargs['o_size'] - Xp[0]), kwargs['ny'])
-    x_n = np.linspace(0, -(kwargs['o_size'] - Xp[1]), kwargs['nx'])
+    x_n = np.linspace(0,  (kwargs['o_size'] - Xp[1]), kwargs['nx'])
+
+    y_n, x_n = np.meshgrid(y_n, x_n, indexing='ij')
+    y_n, x_n = y_n.ravel(), x_n.ravel()
      
     # make the forward propagator
     #----------------------------
@@ -236,12 +242,12 @@ def make_frames(**kwargs):
      
     # make the frames
     #----------------
-    frames = _make_frames(O, Ps, forward_prop, (y_n/dx, x_n/dx))
+    frames = _make_frames(O, Ps, forward_prop, (-y_n/dx, x_n/dx))
      
     # Poisson sampling
     #-----------------
     frames = add_poisson_noise(frames, Pd, kwargs['photons'])
-    return Pd, Ps, frames
+    return Pd, Ps, (x_n, y_n), frames
 
 def h5w(f, key, data):
     if key in f :
@@ -249,22 +255,37 @@ def h5w(f, key, data):
     f[key] = data
 
 
-def write_data(filename, Pd, frames, **params):
+def write_data(filename, Pd, pos, frames, **params):
     """
     """
-    f = h5py.File(filename, 'a')
+    pos_xyz = np.zeros((len(frames), 3), dtype=np.float)
+    pos_xyz[:, 0] = pos[0]
+    pos_xyz[:, 1] = pos[1]
+    pos_xyz[:, 2] = params['defocus']
+
+    basis_vec = np.zeros((len(frames), 2, 3), dtype=np.float)
+    basis_vec[:, 0] = np.array([0, -params['pix_size'], 0])
+    basis_vec[:, 1] = np.array([params['pix_size'],  0, 0])
     
-    h5w(f, '/entry_1/data_1/data', frames.astype(np.uint16))
+    f = h5py.File(filename, 'a')
+    h5w(f, '/entry_1/data_1/data', frames.astype(np.uint32))
     h5w(f, '/entry_1/instrument_1/detector_1/distance', params['det_dist'])
     h5w(f, '/entry_1/instrument_1/detector_1/x_pixel_size', params['pix_size'])
     h5w(f, '/entry_1/instrument_1/detector_1/y_pixel_size', params['pix_size'])
+    h5w(f, '/entry_1/instrument_1/source_1/energy', params['energy'])
+    h5w(f, '/entry_1/instrument_1/detector_1/basis_vectors', basis_vec)
+    h5w(f, '/entry_1/sample_3/geometry/translation', pos_xyz)
+    h5w(f, '/process_2/powder', np.sum(frames, axis=0))
+
+    whitefield = np.abs(Pd)**2 / np.sum(np.abs(Pd)**2) * params['photons']
+    h5w(f, '/process_2/whitefield', whitefield.astype(np.uint32))
     f.close()
 
 if __name__ == '__main__':
     args, params = parse_cmdline_args()
     
     # make the frames
-    Pd, Ps, frames = make_frames(**params)
+    Pd, Ps, pos, frames = make_frames(**params)
     
     # write the frames
-    write_data(args.filename, Pd, frames, **params)
+    write_data(args.filename, Pd, pos, frames, **params)

@@ -3,6 +3,17 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import numpy
+import optics
+import pyximport; pyximport.install(setup_args={"include_dirs":numpy.get_include()})
+
+from feature_matching import feature_map_cython
+#from mean_filter import mean_filter
+from get_Fresnel_pixel_shifts_cxi import get_Fresnel_pixel_shifts_cxi
+from get_Fresnel_pixel_shifts_cxi import get_Fresnel_pixel_shifts_cxi_inverse
+
+import numpy as np
+
 def parse_parameters(config):
     """
     Parse values from the configuration file and sets internal parameter accordingly
@@ -254,7 +265,6 @@ def make_Zernike_phase(a = None, Noll = None, nms = None, shape=(256, 256), pixe
     if pixel norm is False (default), then
     np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
     """
-    import numpy as np
     x = np.linspace(-1, 1, shape[1])
     y = np.linspace(-1, 1, shape[0])
     ry, rx = np.meshgrid(y, x, indexing='ij')
@@ -310,7 +320,6 @@ def make_Zernike_phase_cartesian(a = None, Noll = None, nms = None, shape=(256, 
     if pixel norm is False (default), then
     np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
     """
-    import numpy as np
     x      = np.linspace(-1, 1, shape[1])
     y      = np.linspace(-1, 1, shape[0])
     ry, rx = np.meshgrid(y, x, indexing='ij')
@@ -364,7 +373,6 @@ def make_Zernike_phase_cartesian_rectangular(a = None, Noll = None, nms = None, 
     if pixel norm is False (default), then
     np.sum(Z_n, Z_m) = (number of pixels inside circular mask)**2, for n == m
     """
-    import numpy as np
     x      = np.linspace(dom[2], dom[3] , shape[1])
     y      = np.linspace(dom[0], dom[1], shape[0])
     
@@ -480,7 +488,6 @@ def make_Zernike_polynomial_cartesian(n, m, order = None):
     """
     from math import factorial as fac
     import math
-    import numpy as np
     
     if (n-m) % 2 == 1 or abs(m) > n or n < 0 :
         return np.array([0]), 0
@@ -522,7 +529,6 @@ def make_Zernike_polynomial_cartesian(n, m, order = None):
     return mat, A
 
 def polymul2d(a, b):
-    import numpy as np
     # there must be a faster way...
     cl = []
     for i in range(a.shape[0]):
@@ -637,3 +643,114 @@ def Gram_Schmit_orthonormalisation(vects, product):
     return basis
 
 
+def multiroll(x, shift, axis=None):
+    """Roll an array along each axis.
+
+    Thanks to: Warren Weckesser, 
+    http://stackoverflow.com/questions/30639656/numpy-roll-in-several-dimensions
+    
+    
+    Parameters
+    ----------
+    x : array_like
+        Array to be rolled.
+    shift : sequence of int
+        Number of indices by which to shift each axis.
+    axis : sequence of int, optional
+        The axes to be rolled.  If not given, all axes is assumed, and
+        len(shift) must equal the number of dimensions of x.
+
+    Returns
+    -------
+    y : numpy array, with the same type and size as x
+        The rolled array.
+
+    Notes
+    -----
+    The length of x along each axis must be positive.  The function
+    does not handle arrays that have axes with length 0.
+
+    See Also
+    --------
+    numpy.roll
+
+    Example
+    -------
+    Here's a two-dimensional array:
+
+    >>> x = np.arange(20).reshape(4,5)
+    >>> x 
+    array([[ 0,  1,  2,  3,  4],
+           [ 5,  6,  7,  8,  9],
+           [10, 11, 12, 13, 14],
+           [15, 16, 17, 18, 19]])
+
+    Roll the first axis one step and the second axis three steps:
+
+    >>> multiroll(x, [1, 3])
+    array([[17, 18, 19, 15, 16],
+           [ 2,  3,  4,  0,  1],
+           [ 7,  8,  9,  5,  6],
+           [12, 13, 14, 10, 11]])
+
+    That's equivalent to:
+
+    >>> np.roll(np.roll(x, 1, axis=0), 3, axis=1)
+    array([[17, 18, 19, 15, 16],
+           [ 2,  3,  4,  0,  1],
+           [ 7,  8,  9,  5,  6],
+           [12, 13, 14, 10, 11]])
+
+    Not all the axes must be rolled.  The following uses
+    the `axis` argument to roll just the second axis:
+
+    >>> multiroll(x, [2], axis=[1])
+    array([[ 3,  4,  0,  1,  2],
+           [ 8,  9,  5,  6,  7],
+           [13, 14, 10, 11, 12],
+           [18, 19, 15, 16, 17]])
+
+    which is equivalent to:
+
+    >>> np.roll(x, 2, axis=1)
+    array([[ 3,  4,  0,  1,  2],
+           [ 8,  9,  5,  6,  7],
+           [13, 14, 10, 11, 12],
+           [18, 19, 15, 16, 17]])
+
+    """
+    from itertools import product
+    x = np.asarray(x)
+    if axis is None:
+        if len(shift) != x.ndim:
+            raise ValueError("The array has %d axes, but len(shift) is only "
+                             "%d. When 'axis' is not given, a shift must be "
+                             "provided for all axes." % (x.ndim, len(shift)))
+        axis = range(x.ndim)
+    else:
+        # axis does not have to contain all the axes.  Here we append the
+        # missing axes to axis, and for each missing axis, append 0 to shift.
+        missing_axes = set(range(x.ndim)) - set(axis)
+        num_missing = len(missing_axes)
+        axis = tuple(axis) + tuple(missing_axes)
+        shift = tuple(shift) + (0,)*num_missing
+
+    # Use mod to convert all shifts to be values between 0 and the length
+    # of the corresponding axis.
+    shift = [s % x.shape[ax] for s, ax in zip(shift, axis)]
+
+    # Reorder the values in shift to correspond to axes 0, 1, ..., x.ndim-1.
+    shift = np.take(shift, np.argsort(axis))
+
+    # Create the output array, and copy the shifted blocks from x to y.
+    y = np.empty_like(x)
+    src_slices = [(slice(n-shft, n), slice(0, n-shft))
+                  for shft, n in zip(shift, x.shape)]
+    dst_slices = [(slice(0, shft), slice(shft, n))
+                  for shft, n in zip(shift, x.shape)]
+    src_blks = product(*src_slices)
+    dst_blks = product(*dst_slices)
+    for src_blk, dst_blk in zip(src_blks, dst_blks):
+        y[dst_blk] = x[src_blk]
+
+    return y

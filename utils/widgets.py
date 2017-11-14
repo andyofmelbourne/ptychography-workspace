@@ -31,12 +31,15 @@ except :
 import signal
 import copy 
 
-import ConfigParser
+try :
+    import ConfigParser as configparser 
+except ImportError :
+    import configparser
 
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
 
-from Ptychography import utils
+import utils
 
 # set the config defaults 
 config_default = {}

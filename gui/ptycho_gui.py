@@ -14,7 +14,10 @@ except :
     from PyQt4 import QtGui
 import signal
 import copy 
-import ConfigParser
+try :
+    import ConfigParser as configparser 
+except ImportError :
+    import configparser
 
 root = os.path.split(os.path.abspath(__file__))[0]
 root = os.path.split(root)[0]
@@ -22,7 +25,7 @@ root = os.path.split(root)[0]
 sys.path.insert(1, os.path.join(root, 'utils'))
 sys.path.insert(1, os.path.join(root, 'process'))
 
-from Ptychography import utils
+import utils
 
 #from widgets import Write_config_file_widget
 from widgets import Show_stitch_widget
@@ -54,7 +57,7 @@ def load_config(filename, name = 'basic_stitch.ini'):
         raise NameError('config file does not exist: ' + config)
     
     # process config file
-    conf = ConfigParser.ConfigParser()
+    conf = configparser.ConfigParser()
     conf.read(config)
     
     params = utils.parse_parameters(conf)

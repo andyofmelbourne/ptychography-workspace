@@ -44,7 +44,6 @@ def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, 
         good_frames = range(f['/entry_1/data_1/data'].shape[0])
     
     b           = f['/entry_1/instrument_1/detector_1/basis_vectors'][good_frames]
-    R           = f['/entry_1/sample_3/geometry/translation'][good_frames]
 
     R_ss_fs_out = R_ss_fs.astype(np.float).copy()
     
@@ -65,6 +64,7 @@ def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, 
     R_ss_fs_out *= du
     
     #print('\ninverting from sample coords to detector coords:')
+    R = f['/entry_1/sample_3/geometry/translation'][()]
     for i in range(R_ss_fs_out.shape[0]):
         Ri, r, rank, s = np.linalg.lstsq(b[i][:, :2], R_ss_fs_out[i])
         R[good_frames[i]][:2] = Ri

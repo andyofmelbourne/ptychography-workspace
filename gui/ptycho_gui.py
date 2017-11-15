@@ -44,6 +44,7 @@ from widgets import Test_run_command_widget
 from widgets import Zernike_widget
 from widgets import Defocus_widget
 from widgets import Show_make_pixel_shifts_widget
+from widgets import Show_forward_sim_widget
 
 def load_config(filename, name = 'basic_stitch.ini'):
     # if config is non then read the default from the *.pty dir
@@ -147,6 +148,21 @@ class Gui(QtGui.QTabWidget):
         self.tabs.append( Mask_maker_widget(filename, config_default['output'] + '/mask', filename, config_default['output'] + '/mask') )
         self.addTab(self.tabs[-1], "mask maker")
         
+        # forward sim tab
+        #################
+        def refresh():
+            print('refreshing the frames widget')
+            self.tabs[0].close()
+            del self.tabs[0]
+            self.removeTab(0)
+            
+            self.tabs[0] = Show_frames_selection_widget(filename) 
+            self.insertTab(0, self.tabs[0], "show frames")
+        
+        params = load_config(filename, name='forward_sim.ini')
+        self.tabs.append( Show_forward_sim_widget(filename, params, refresh) )
+        self.addTab(self.tabs[-1], "Forward sim")
+
         # defocus tab
         #################
         # load the default config file

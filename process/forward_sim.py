@@ -247,7 +247,7 @@ def make_frames(**kwargs):
     # Poisson sampling
     #-----------------
     frames = add_poisson_noise(frames, Pd, kwargs['photons'])
-    return Pd, Ps, (x_n, y_n), frames
+    return Pd, Ps, O, (x_n, y_n), frames
 
 def h5w(f, key, data):
     if key in f :
@@ -285,7 +285,42 @@ if __name__ == '__main__':
     args, params = parse_cmdline_args()
     
     # make the frames
-    Pd, Ps, pos, frames = make_frames(**params)
+    Pd, Ps, O, pos, frames = make_frames(**params)
     
     # write the frames
     write_data(args.filename, Pd, pos, frames, **params)
+
+    # write the result 
+    ##################
+    g = h5py.File(args.filename)
+    outputdir = os.path.split(args.filename)[0]
+    
+    group = params['h5_group']
+    if group not in g:
+        print(g.keys())
+        g.create_group(group)
+
+    key = params['h5_group']+'/O'
+    if key in g :
+        del g[key]
+    g[key] = O.astype(np.complex128)
+    
+    key = params['h5_group']+'/Pupil'
+    if key in g :
+        del g[key]
+    g[key] = Pd
+
+    key = '/process_3/good_frames'
+    if key in g :
+        del g[key]
+    g[key] = np.arange(len(frames))
+    
+    g.close()
+    
+    # copy the config file
+    ######################
+    try :
+        import shutil
+        shutil.copy(args.config, outputdir)
+    except Exception as e :
+        print(e)

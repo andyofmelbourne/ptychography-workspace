@@ -2386,12 +2386,12 @@ def run_and_log_command():
     app.exec_()
 
 class Show_forward_sim_widget(QtGui.QWidget):
-    def __init__(self, filename, config_dict):
+    def __init__(self, filename, config_dict, callback = None):
         super(Show_forward_sim_widget, self).__init__()
         
-        self.initUI(filename, config_dict)
+        self.initUI(filename, config_dict, callback = callback)
 
-    def initUI(self, filename, config_dict):
+    def initUI(self, filename, config_dict, callback):
         """
         First show the stitch if there is one...
         
@@ -2424,7 +2424,7 @@ class Show_forward_sim_widget(QtGui.QWidget):
         self.imageView = pg.ImageView(view = frame_plt)
         self.imageView.ui.menuBtn.hide()
         self.imageView.ui.roiBtn.hide()
-        self.stitch_path = config_dict['stitch']['h5_group'] + '/O'
+        self.stitch_path = config_dict['forward_sim']['h5_group'] + '/O'
         #self.R_path = config_dict['stitch']['h5_group']+'/R'
         self.im_init = False
         if self.stitch_path in self.f :
@@ -2442,6 +2442,8 @@ class Show_forward_sim_widget(QtGui.QWidget):
         ####################
         self.run_command_widget = Run_and_log_command()
         self.run_command_widget.finished_signal.connect(self.finished)
+        if callback is not None :
+            self.run_command_widget.finished_signal.connect(callback)
         
         # run command button
         ####################

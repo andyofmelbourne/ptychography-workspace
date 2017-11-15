@@ -2385,6 +2385,108 @@ def run_and_log_command():
     Mwin.show()
     app.exec_()
 
+class Show_forward_sim_widget(QtGui.QWidget):
+    def __init__(self, filename, config_dict):
+        super(Show_forward_sim_widget, self).__init__()
+        
+        self.initUI(filename, config_dict)
+
+    def initUI(self, filename, config_dict):
+        """
+        First show the stitch if there is one...
+        
+        We need: 
+        an imageview on the left
+        a config writer on the right
+        below that a run button 
+        below that a run and log command widget
+        
+        then wait for command to finish and show the image
+        
+        would be cool if we could show a scatter plot of the 
+        positions on top of the stitch image.
+        """
+        # get the output directory
+        self.output_dir = os.path.split(filename)[0]
+        self.config_filename = os.path.join(self.output_dir, 'forward_sim.ini')
+        self.filename = filename
+        self.f = h5py.File(filename, 'r')
+        
+        # Make a grid layout
+        layout = QtGui.QGridLayout()
+        
+        # add the layout to the central widget
+        self.setLayout(layout)
+        
+        # stitch plot
+        #############
+        frame_plt = pg.PlotItem(title = 'forward_sim merge')
+        self.imageView = pg.ImageView(view = frame_plt)
+        self.imageView.ui.menuBtn.hide()
+        self.imageView.ui.roiBtn.hide()
+        self.stitch_path = config_dict['stitch']['h5_group'] + '/O'
+        #self.R_path = config_dict['stitch']['h5_group']+'/R'
+        self.im_init = False
+        if self.stitch_path in self.f :
+            print(self.f[self.stitch_path].shape)
+            t = self.f[self.stitch_path].value.T.real
+            self.imageView.setImage(t)
+            self.im_init = True
+        self.f.close()
+        
+        # config widget
+        ###############
+        self.config_widget = Write_config_file_widget(config_dict, self.config_filename)
+
+        # run command widget
+        ####################
+        self.run_command_widget = Run_and_log_command()
+        self.run_command_widget.finished_signal.connect(self.finished)
+        
+        # run command button
+        ####################
+        self.run_button = QtGui.QPushButton('Calculate', self)
+        self.run_button.clicked.connect(self.run_button_clicked)
+        
+        # add a spacer for the labels and such
+        verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
+        
+        # set the layout
+        ################
+        layout.addWidget(self.imageView,           0, 1, 5, 1)
+        layout.addWidget(self.config_widget,       0, 0, 1, 1)
+        layout.addWidget(self.run_button,          1, 0, 1, 1)
+        #layout.addWidget(self.ref_button,          2, 0, 1, 1)
+        #layout.addWidget(self.set_button,          3, 0, 1, 1)
+        layout.addItem(verticalSpacer,             4, 0, 1, 1)
+        layout.addWidget(self.run_command_widget,  5, 0, 1, 2)
+        #layout.addWidget(self.run_ref_widget,      6, 0, 1, 2)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnMinimumWidth(0, 250)
+        self.layout = layout
+
+    def run_button_clicked(self):
+        # write the config file 
+        #######################
+        self.config_widget.write_file()
+    
+        # Run the command 
+        #################
+        py = os.path.join(root, 'process/forward_sim.py')
+        cmd = 'python ' + py + ' ' + self.filename + ' -c ' + self.config_filename
+        self.run_command_widget.run_cmd(cmd)
+    
+    def finished(self):
+        self.f = h5py.File(self.filename, 'r')
+        print(self.stitch_path)
+        t = self.f[self.stitch_path].value.T.real
+        if self.im_init :
+            self.imageView.setImage(t, autoRange = False, autoLevels = False, autoHistogramRange = False)
+            self.im_init = True
+        else :
+            self.imageView.setImage(t)
+            self.im_init = True
+        self.f.close()
 
 if __name__ == '__main__':
     run_and_log_command()

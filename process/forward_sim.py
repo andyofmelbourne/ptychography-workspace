@@ -53,11 +53,11 @@ def parse_cmdline_args():
     
     # if config is non then read the default from the *.cxi dir
     if args.config is None :
-        args.config = os.path.join(os.path.split(args.filename)[0], 'test_example.ini')
+        args.config = os.path.join(os.path.split(args.filename)[0], 'forward_sim.ini')
         
         # if there is no config file in the cxi dir then read the default from the process dir
         if not os.path.exists(args.config):
-            args.config = os.path.join(root, 'process/test_example.ini')
+            args.config = os.path.join(root, 'process/forward_sim.ini')
     
     # check that args.config exists
     if not os.path.exists(args.config):
@@ -69,7 +69,7 @@ def parse_cmdline_args():
     
     params = utils.parse_parameters(config)
     
-    return args, params['example']
+    return args, params['forward_sim']
 
 def add_poisson_noise(frames, Pd, n):
     # normalise

@@ -34,7 +34,7 @@ def get_Fresnel_pixel_shifts_cxi(f, good_frames=None, df=None, offset_to_zero=Tr
         R_ss_fs[:, 1] -= np.max(R_ss_fs[:, 1])
     return R_ss_fs, (df / z) * du
 
-def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, offset_to_zero=True):
+def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, offset_to_zero=True, remove_affine = False):
     du = np.array([f['/entry_1/instrument_1/detector_1/y_pixel_size'][()], f['/entry_1/instrument_1/detector_1/x_pixel_size'][()]])
     z  = f['/entry_1/instrument_1/detector_1/distance'][()]
     E  = f['/entry_1/instrument_1/source_1/energy'][()]
@@ -64,12 +64,30 @@ def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, 
     R_ss_fs_out *= du
     
     #print('\ninverting from sample coords to detector coords:')
-    R = f['/entry_1/sample_3/geometry/translation'][()]
+    R0 = f['/entry_1/sample_3/geometry/translation'][()]
+    R  = R0.copy()
     for i in range(R_ss_fs_out.shape[0]):
         Ri, r, rank, s = np.linalg.lstsq(b[i][:, :2], R_ss_fs_out[i])
         R[good_frames[i]][:2] = Ri
         #print(R_ss_fs_out[i], '-->', Ri)
     
+    if remove_affine :
+        R = remove_affine_transformation(R0, R)
+    
     return R
 
+
+def remove_affine_transformation(R0, R1):
+    A = np.vstack([R0[:, 0], R0[:, 1], np.ones(len(R1))]).T
+    ATx, r, rank, s = np.linalg.lstsq(A, R1[:, 0])
+    ATy, r, rank, s = np.linalg.lstsq(A, R1[:, 1])
+    
+    Rout = R1.copy()
+    Rout[:, 0] = np.dot(A, ATx)
+    Rout[:, 1] = np.dot(A, ATy)
+
+    print(ATx)
+    print(ATy)
+    return Rout
+    
 

@@ -4,14 +4,16 @@ Installation
 Nothing to install just download a release_. Or clone the repo:
 
 .. code-block:: bash
+
     git clone https://github.com/andyofmelbourne/ptychography-workspace.git
 
-.. release_: https://github.com/andyofmelbourne/ptychography-workspace/releases
+.. _release: https://github.com/andyofmelbourne/ptychography-workspace/releases
 
 ===========
 quick start
 ===========
 .. code-block:: bash
+
     python process/forward_sim.py -c process/forward_sim.ini hdf5/example/example.cxi
 
     python gui/ptycho_gui.py hdf5/example/example.cxi

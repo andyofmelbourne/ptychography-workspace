@@ -705,7 +705,7 @@ if __name__ == '__main__':
     # Convert sample coordinates from pixels to meters
     ##################################################
     if params['cpu_stitch']['update_positions'] :
-        R_out = utils.get_Fresnel_pixel_shifts_cxi_inverse(cpu_stitcher.R, f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True)
+        R_out = utils.get_Fresnel_pixel_shifts_cxi_inverse(cpu_stitcher.R, f, good_frames, params['cpu_stitch']['defocus'], offset_to_zero=True, remove_affine=True)
     else : 
         R_out = None
 

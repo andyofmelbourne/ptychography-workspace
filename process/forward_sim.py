@@ -138,20 +138,6 @@ def make_probe(**kwargs):
     from scipy.ndimage import gaussian_filter
     P = gaussian_filter(P, 2.0, mode='constant') + 0J
     
-    # add aberrations
-    """
-    dx  = kwargs['pix_size']  
-    y, x = np.fft.fftfreq(P.shape[0], 1./P.shape[0])*dx, np.fft.fftfreq(P.shape[1], 1./P.shape[1])*dx
-    y, x = np.meshgrid(y, x, indexing='ij')
-    X2 = y**2 + x**2
-    X2 = np.fft.fftshift(X2)
-    
-    from scipy import constants as sc
-    wav = sc.h * sc.c / kwargs['energy']
-    ex = np.exp(-1.0J * np.pi * X2 / (wav * kwargs['det_dist']))
-    P *= ex
-    """
-    
     back_prop = make_prop(P.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'], inverse=True)
     
     # real-space probe
@@ -162,13 +148,14 @@ def _make_frames(O, Ps, forward_prop, pos):
     # in pixels
     y_n, x_n = pos
 
+    i, j = np.indices(Ps.shape)
+    
     # keep y_n and x_n in array bounds
     y_n -= y_n.max()
     x_n -= x_n.max()
-    
+
     # make frames 
     frames = []
-    i, j = np.indices(Ps.shape)
     for y, x in zip(y_n, x_n):
         ss = np.rint(i - y).astype(np.int)
         fs = np.rint(j - x).astype(np.int)
@@ -186,7 +173,7 @@ def make_prop(shape, z, df, du, en, inverse=False):
     # wavelength
     from scipy import constants as sc
     wav = sc.h * sc.c / en
-
+    
     dx    = du 
     z_eff = df * (z-df) / z
 
@@ -230,12 +217,23 @@ def make_frames(**kwargs):
     if kwargs['o_size'] < np.max(Xp) :
         raise ValueError('Error: o_size is less than the probe size... Make o_size bigger than '+str(np.max(Xp)))
     
-    y_n = np.linspace(0, -(kwargs['o_size'] - Xp[0]), kwargs['ny'])
-    x_n = np.linspace(0,  (kwargs['o_size'] - Xp[1]), kwargs['nx'])
-
-    y_n, x_n = np.meshgrid(y_n, x_n, indexing='ij')
-    y_n, x_n = y_n.ravel(), x_n.ravel()
+    y_n, ystep = np.linspace(0, -(kwargs['o_size'] - Xp[0]), kwargs['ny'], retstep=True)
+    x_n, xstep = np.linspace(0,  (kwargs['o_size'] - Xp[1]), kwargs['nx'], retstep=True)
+    
+    y_n,  x_n  = np.meshgrid(y_n, x_n, indexing='ij')
+    y0_n, x0_n = y_n.flatten(), x_n.flatten()
+    
+    # add random offset
+    y_n = y0_n + (0.5-np.random.random(y0_n.shape)) * kwargs['rand_offset'] * ystep
+    x_n = x0_n + (0.5-np.random.random(x0_n.shape)) * kwargs['rand_offset'] * xstep
      
+    # keep y_n and x_n in array bounds
+    y_n[y_n>0] = 0
+    x_n[x_n<0] = 0
+    
+    y_n[ y_n < -(kwargs['o_size'] - Xp[0])] = -(kwargs['o_size'] - Xp[0])
+    x_n[ x_n >  (kwargs['o_size'] - Xp[1])] =  (kwargs['o_size'] - Xp[1])
+    
     # make the forward propagator
     #----------------------------
     forward_prop = make_prop(Ps.shape, kwargs['det_dist'], kwargs['defocus'], kwargs['pix_size'], kwargs['energy'])
@@ -247,7 +245,7 @@ def make_frames(**kwargs):
     # Poisson sampling
     #-----------------
     frames = add_poisson_noise(frames, Pd, kwargs['photons'])
-    return Pd, Ps, O, (x_n, y_n), frames
+    return Pd, Ps, O, (x0_n, y0_n), frames
 
 def h5w(f, key, data):
     if key in f :
@@ -276,6 +274,7 @@ def write_data(filename, Pd, pos, frames, **params):
     h5w(f, '/entry_1/instrument_1/detector_1/basis_vectors', basis_vec)
     h5w(f, '/entry_1/sample_3/geometry/translation', pos_xyz)
     h5w(f, '/process_2/powder', np.sum(frames, axis=0))
+    h5w(f, '/process_3/mask', np.ones_like(frames[0], dtype=np.bool))
 
     whitefield = np.abs(Pd)**2 / np.sum(np.abs(Pd)**2) * params['photons']
     h5w(f, '/process_2/whitefield', whitefield.astype(np.uint32))

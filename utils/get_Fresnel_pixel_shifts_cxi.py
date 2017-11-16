@@ -78,9 +78,9 @@ def get_Fresnel_pixel_shifts_cxi_inverse(R_ss_fs, f, good_frames=None, df=None, 
 
 
 def remove_affine_transformation(R0, R1):
-    A = np.vstack([R0[:, 0], R0[:, 1], np.ones(len(R1))]).T
-    ATx, r, rank, s = np.linalg.lstsq(A, R1[:, 0])
-    ATy, r, rank, s = np.linalg.lstsq(A, R1[:, 1])
+    A = np.vstack([R1[:, 0], R1[:, 1], np.ones(len(R1))]).T
+    ATx, r, rank, s = np.linalg.lstsq(A, R0[:, 0])
+    ATy, r, rank, s = np.linalg.lstsq(A, R0[:, 1])
     
     Rout = R1.copy()
     Rout[:, 0] = np.dot(A, ATx)

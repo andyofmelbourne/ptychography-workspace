@@ -1968,15 +1968,15 @@ class Run_and_log_command(QtGui.QWidget):
             
             # emmit a signal when complete
             self.finished_signal.emit(True)
-            print('Output   :', self.output)
+            print('Output   :', self.output.decode("utf-8"))
             
         else :
             self.status_label.setText(str(status))
             
             # get the output and error msg
             self.output, self.err_msg = self.p.communicate()
-            print('Output   :', self.output)
-            print('Error msg:', self.err_msg)
+            print('Output   :', self.output.decode("utf-8"))
+            print('Error msg:', self.err_msg.decode("utf-8"))
             
             # emmit a signal when complete
             self.finished_signal.emit(False)

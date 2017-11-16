@@ -1,13 +1,12 @@
 ============
 Installation
 ============
-Nothing to install just download a release_. Or clone the repo:
+Nothing to install just download a `release <https://github.com/andyofmelbourne/ptychography-workspace/releases>`_. Or clone the repo:
 
 .. code-block:: bash
 
     git clone https://github.com/andyofmelbourne/ptychography-workspace.git
 
-.. _release: https://github.com/andyofmelbourne/ptychography-workspace/releases
 
 ===========
 quick start
